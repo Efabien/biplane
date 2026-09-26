@@ -13,7 +13,7 @@ const PLACES = [
 // The map follows the plane, showing EXT metres around it; the paper covers the whole world plus a margin of sea
 const EXT = 2150, MAP = 176, RING = 9, SIZE = MAP + 2 * RING, PPM = MAP / (2 * EXT);
 const PX0 = X0 - 400, PZ0 = Z0 - 400, PW = Math.round((WX + 800) * PPM), PH = Math.round((WZ + 800) * PPM);
-const INK = '#2a2118', SEPIA = '#6b4a2a', RED = '#a8321f';
+const INK = '#2a2118', SEPIA = '#6b4a2a', RED = '#a8321f', GOLD = '#e8b54a';
 const DIAL_FONT = "'Oswald', 'Arial Narrow', sans-serif", TYPE_FONT = "'Special Elite', 'Courier New', monospace";
 const bearingTo = (dx, dz) => (THREE.MathUtils.radToDeg(Math.atan2(dx, -dz)) + 360) % 360; // 0 = north (-z), clockwise
 const wrap180 = (d) => ((d + 540) % 360) - 180;
@@ -72,7 +72,7 @@ export function createNav() {
   const fwd = new THREE.Vector3();
   let mapT = 1;
 
-  function drawCompass(heading, px, pz) {
+  function drawCompass(heading, px, pz, target) {
     const g = cc;
     g.clearRect(0, 0, CW, CH);
     g.fillStyle = brass(g, 0, 0, CW, CH); g.beginPath(); g.roundRect(0, 0, CW, CH, 8); g.fill();
@@ -113,6 +113,13 @@ export function createNav() {
     };
     for (const s of STRIPS) marker(s.x, s.z, s.name, true);
     for (const p of PLACES) marker(p.x, p.z, p.name, false);
+    if (target) { // adventure objective: a gold envelope on the tape
+      const diff = wrap180(bearingTo(target.x - px, target.z - pz) - heading);
+      const sx = CW / 2 + THREE.MathUtils.clamp(diff, -58, 58) * ppd;
+      g.fillStyle = GOLD; g.strokeStyle = INK; g.lineWidth = 0.8;
+      g.beginPath(); g.rect(sx - 6, 24, 12, 8); g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(sx - 6, 24); g.lineTo(sx, 29); g.lineTo(sx + 6, 24); g.stroke();
+    }
     g.restore();
     // lubber line
     g.fillStyle = RED;
@@ -122,7 +129,7 @@ export function createNav() {
     g.fillStyle = glass; g.fillRect(6, 5, CW - 12, CH / 2 - 5);
   }
 
-  function drawMap(heading, px, pz) {
+  function drawMap(heading, px, pz, target) {
     const g = mc, c = SIZE / 2;
     g.clearRect(0, 0, SIZE, SIZE);
     cx = px; cz = pz;
@@ -140,6 +147,13 @@ export function createNav() {
       const [x, y] = toMap(p.x, p.z);
       g.fillStyle = INK; g.beginPath(); g.arc(x, y, 2, 0, 7); g.fill();
       g.fillStyle = SEPIA; g.fillText(p.name, THREE.MathUtils.clamp(x, 34, SIZE - 34), y - 5);
+    }
+    if (target) { // adventure objective, pinned to the rim when it's off the map
+      let [tx, ty] = toMap(target.x, target.z);
+      const dx = tx - c, dy = ty - c, r = Math.hypot(dx, dy), max = MAP / 2 - 7;
+      if (r > max) { tx = c + (dx / r) * max; ty = c + (dy / r) * max; }
+      g.fillStyle = GOLD; g.strokeStyle = INK; g.lineWidth = 1;
+      g.beginPath(); g.arc(tx, ty, 4.5, 0, 7); g.fill(); g.stroke();
     }
     // the plane, as a small red arrowhead
     const [x, y] = toMap(px, pz);
@@ -160,11 +174,11 @@ export function createNav() {
   }
 
   return {
-    update(dt, flight) {
+    update(dt, flight, target = null) {
       fwd.set(0, 0, -1).applyQuaternion(flight.q);
       const heading = bearingTo(fwd.x, fwd.z);
-      drawCompass(heading, flight.pos.x, flight.pos.z);
-      if ((mapT += dt) >= 0.1 && !mapEl.hidden) { mapT = 0; drawMap(heading, flight.pos.x, flight.pos.z); }
+      drawCompass(heading, flight.pos.x, flight.pos.z, target);
+      if ((mapT += dt) >= 0.1 && !mapEl.hidden) { mapT = 0; drawMap(heading, flight.pos.x, flight.pos.z, target); }
     },
     toggleMap() { mapEl.hidden = !mapEl.hidden; },
   };

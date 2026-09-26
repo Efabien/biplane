@@ -133,7 +133,7 @@ export class Hud {
     this.bg = bg;
   }
 
-  update(dt, f, world, gfx = '') {
+  update(dt, f, world, target = null, gfx = '') {
     // Needle targets, smoothed like a damped instrument
     const agl = Math.max(0, f.pos.y - GEAR_H - world.groundAt(f.pos.x, f.pos.z));
     const rpm = f.state === 'crashed' ? 0 : 6 + f.throttle * 19 + Math.min(f.airspeed, 55) * 0.05;
@@ -143,17 +143,19 @@ export class Hud {
     v.vs += (THREE.MathUtils.clamp(f.vs, -10, 10) - v.vs) * k;
     v.rpm += (rpm - v.rpm) * Math.min(1, dt * 3);
 
-    // Text refreshed ~10x per second: status + direction to the nearest landing site
+    // Text refreshed ~10x per second: status + direction to the adventure objective, or to the nearest landing site
     if ((this.t += dt) >= 0.1) {
       this.t = 0;
-      const { strip, dist } = world.nearestStrip(f.pos.x, f.pos.z);
+      const { strip, dist: sd } = world.nearestStrip(f.pos.x, f.pos.z);
+      const goal = target ?? { label: strip.name, x: strip.x, z: strip.z };
+      const dist = target ? Math.hypot(goal.x - f.pos.x, goal.z - f.pos.z) : sd;
       let nav = '';
-      if (dist > 400) {
+      if (target || dist > 400) {
         const yaw = _e.setFromQuaternion(f.q, 'YXZ').y;
-        let rel = Math.atan2(-(strip.x - f.pos.x), -(strip.z - f.pos.z)) - yaw;
+        let rel = Math.atan2(-(goal.x - f.pos.x), -(goal.z - f.pos.z)) - yaw;
         rel = THREE.MathUtils.radToDeg(Math.atan2(Math.sin(rel), Math.cos(rel)));
         const turn = Math.abs(rel) < 8 ? 'dead ahead' : `${Math.round(Math.abs(rel))}° ${rel > 0 ? 'left' : 'right'}`;
-        nav = `${strip.name} ${(dist / 1000).toFixed(1)} km, ${turn}`;
+        nav = `${goal.label} ${dist < 1000 ? `${Math.round(dist / 10) * 10} m` : `${(dist / 1000).toFixed(1)} km`}, ${turn}`;
       }
       const [status, extra] = f.status.split('\n');
       const [windLine, gfxLine = ''] = gfx.split('\n');

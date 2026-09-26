@@ -141,6 +141,7 @@ export class Flight {
     _e.setFromQuaternion(this.q, 'YXZ');
     const pitch = _e.x, yaw = _e.y, roll = _e.z;
     const sink = -vel.y, hs = Math.hypot(vel.x, vel.z);
+    this.lastSink = sink; // how firm the last touchdown was (adventure postmarks)
     if (gh < WATER + 0.5) return this.crash('ditched in the water');
     if (sink > 4) return this.crash('landed too hard');
     if (Math.abs(roll) > 0.3) return this.crash('wing hit the ground');

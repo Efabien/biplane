@@ -54,6 +54,30 @@
                     color: var(--ink); background: var(--brass); border: none; }
     #menu #resume[hidden] { display: none; }
     #menu .hint { margin: 0; font-size: 11px; opacity: .6; }
+    #menu .envelope { background: linear-gradient(155deg, transparent 48%, rgba(107, 74, 42, .55) 49%, transparent 51%),
+                      linear-gradient(205deg, transparent 48%, rgba(107, 74, 42, .55) 49%, transparent 51%), #e8b54a; }
+    #menu .advopts { display: flex; gap: 10px; }
+    #menu .advopts button { padding: 4px 12px; border-radius: 4px; cursor: pointer; font: 12px var(--type); color: #f3e6c4;
+                            background: transparent; border: 1px solid rgba(243, 230, 196, .4); }
+    #menu .advopts button[hidden] { display: none; }
+
+    /* Adventure story card: a typed letter on aged paper */
+    #story { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: none; }
+    #story[hidden] { display: none; }
+    #story .letter { pointer-events: auto; position: relative; width: 460px; max-width: 100%; box-sizing: border-box; padding: 22px 26px 20px;
+                     color: var(--ink); border-radius: 4px; border: 1px solid rgba(107, 74, 42, .5); box-shadow: 0 10px 34px rgba(0, 0, 0, .35);
+                     background: radial-gradient(ellipse at 30% 20%, var(--paper), var(--paper-2)); animation: story-in .5s ease-out; }
+    #story .kicker { margin: 0; font-size: 12px; color: var(--sepia); letter-spacing: .08em; text-transform: uppercase; }
+    #story h2 { margin: 4px 0 12px; font: 600 24px var(--dial); letter-spacing: .06em; color: var(--red); }
+    #story .body { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-line; }
+    #story .stamp { display: inline-block; margin: 14px 0 0; padding: 3px 9px; font-size: 12px; color: var(--red);
+                    border: 1.5px solid var(--red); border-radius: 3px; transform: rotate(-2deg); opacity: .85; }
+    #story .stamp[hidden] { display: none; }
+    #story button { display: block; margin: 18px 0 0 auto; padding: 8px 20px; border-radius: 5px; cursor: pointer; border: none;
+                    font: 600 14px var(--dial); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); background: var(--brass); }
+    #story button::after { content: '  ⏎'; opacity: .55; font-weight: 500; }
+    @keyframes story-in { from { opacity: 0; transform: translateY(12px); } }
+    @media (prefers-reduced-motion: reduce) { #story .letter { animation: none; } }
   </style>
   <script type="importmap">
     { "imports": {
@@ -73,6 +97,9 @@
 <b>R</b>       reset           <b>T</b>      landing practice
 <b>G</b>       graphics        <b>M</b>      map
 <b>Esc</b>     pause menu      <b>H</b>      hide this card</p>
+  <div id="story" hidden>
+    <div class="letter"><p class="kicker"></p><h2></h2><p class="body"></p><p class="stamp" hidden></p><button></button></div>
+  </div>
   <div id="menu">
     <div class="folio">
       <h1>Biplane</h1>
@@ -80,6 +107,11 @@
       <div class="cards">
         <button class="plane" data-plane="red"><span class="swatch" style="background:#c4453a"></span>Red biplane<kbd>1</kbd><small>Airfield · dirt runway 36</small></button>
         <button class="plane" data-plane="blue"><span class="swatch" style="background:#3d6fb0"></span>Blue biplane<kbd>2</kbd><small>Meadow strip · grass runway 09</small></button>
+        <button class="plane adv"><span class="swatch envelope"></span>Island Air Mail<kbd>3</kbd><small></small></button>
+      </div>
+      <div class="advopts">
+        <button id="quit-adv" hidden>Quit adventure</button>
+        <button id="reset-adv" hidden>Start adventure over</button>
       </div>
       <div class="opts">
         <span>Start at</span><div class="seg" data-opt="start"></div>

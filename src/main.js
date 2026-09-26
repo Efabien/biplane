@@ -15,6 +15,7 @@ import { createSound } from './sound.js';
 import { Flight, GEAR_H } from './flight.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
+import { createAdventure } from './adventure.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
@@ -47,8 +48,10 @@ const _size = new THREE.Vector2();
 const flight = new Flight(world);
 const sound = createSound();
 
-// ---- Start / pause menu: choose or switch plane, time of day, wind, sound ----
+// ---- Start / pause menu: choose or switch plane, adventure, time of day, wind, sound ----
 const menu = document.getElementById('menu'), resumeBtn = document.getElementById('resume');
+const advBtn = menu.querySelector('.plane.adv'), quitAdvBtn = document.getElementById('quit-adv'), resetAdvBtn = document.getElementById('reset-adv');
+const SUB = menu.querySelector('.sub').textContent;
 const settings = { start: 'home', time: 'golden', wind: 'light', sound: 'on' };
 const OPTIONS = {
   start: [['home', 'Home strip'], ...STRIPS.map((s, i) => [String(i), s.name])],
@@ -61,7 +64,7 @@ function applySetting(opt, value) {
   if (opt === 'time') world.setTime(value);
   if (opt === 'wind') Object.assign(wind, { speed: WINDS[value].speed, gust: WINDS[value].gust });
   if (opt === 'sound') sound.setEnabled(value === 'on');
-  if (opt === 'start') menu.querySelectorAll('.plane').forEach((b) => { b.querySelector('small').textContent = stripLabel(startFor(b.dataset.plane)); });
+  if (opt === 'start') menu.querySelectorAll('.plane[data-plane]').forEach((b) => { b.querySelector('small').textContent = stripLabel(startFor(b.dataset.plane)); });
   menu.querySelectorAll(`[data-opt="${opt}"] button`).forEach((b) => b.classList.toggle('on', b.dataset.value === value));
 }
 for (const [opt, list] of Object.entries(OPTIONS)) {
@@ -75,12 +78,19 @@ for (const [opt, list] of Object.entries(OPTIONS)) {
   }
   applySetting(opt, settings[opt]);
 }
+function refreshMenu() {
+  menu.querySelectorAll('.plane[data-plane]').forEach((b) => b.classList.toggle('current', started && !adventure.active && planes[b.dataset.plane] === plane));
+  advBtn.classList.toggle('current', adventure.active);
+  advBtn.querySelector('small').textContent = adventure.active ? 'In progress · resume to carry on' : adventure.summary();
+  quitAdvBtn.hidden = !adventure.active;
+  resetAdvBtn.hidden = !adventure.hasProgress;
+}
 function openMenu() {
   paused = true;
   menu.hidden = false;
-  menu.querySelector('.sub').textContent = 'Paused · pick a plane to switch, or resume';
+  menu.querySelector('.sub').textContent = adventure.active ? 'Paused · Island Air Mail' : 'Paused · pick a plane to switch, or resume';
   resumeBtn.hidden = false;
-  menu.querySelectorAll('.plane').forEach((b) => b.classList.toggle('current', planes[b.dataset.plane] === plane));
+  refreshMenu();
 }
 function closeMenu() { if (started) { paused = false; menu.hidden = true; } }
 // Where a plane starts: its home strip, or the landing site picked under "Start at"
@@ -94,21 +104,57 @@ function stripLabel({ strip, dir }) {
   const rwy = String(Math.round(bearing / 10) || 36).padStart(2, '0');
   return `${strip.name} · ${strip.surface} runway ${rwy}`;
 }
-// Fly the chosen plane from its start strip; the other one goes back to its parking spot
-function choose(id) {
+// Fly a plane from a given start; the other one goes back to its parking spot
+function takeOff(id, start) {
   const other = id === 'red' ? 'blue' : 'red';
   plane.pilot.visible = true;
   plane = planes[id];
   plane.pilot.visible = !cockpit;
   park(other);
-  flight.home = startFor(id);
+  flight.home = start;
   flight.reset();
   snap = true;
   started = true;
   closeMenu();
 }
-menu.querySelectorAll('.plane').forEach((b) => b.addEventListener('click', () => choose(b.dataset.plane)));
+// Free flight with the chosen plane (leaves the adventure; its progress stays saved)
+function choose(id) {
+  adventure.stop();
+  takeOff(id, startFor(id));
+}
+// Adventure: the red mail plane; resumes at the saved delivery, or carries on if it's already running
+function startAdventure() {
+  if (adventure.active) { closeMenu(); return; }
+  adventure.begin();
+}
+// Quit the adventure: back to the start screen of free flight, as on first load
+function quitAdventure() {
+  adventure.stop();
+  plane.pilot.visible = true;
+  plane = planes.red;
+  plane.pilot.visible = !cockpit;
+  park('blue');
+  flight.home = HOMES.red;
+  flight.reset();
+  syncPlane(plane, flight, 0);
+  snap = true;
+  started = paused = false;
+  menu.querySelector('.sub').textContent = SUB;
+  resumeBtn.hidden = true;
+  refreshMenu();
+}
+const adventure = createAdventure({ scene, world, flight, fly: (start) => takeOff('red', start) });
+menu.querySelectorAll('.plane[data-plane]').forEach((b) => b.addEventListener('click', () => choose(b.dataset.plane)));
+advBtn.addEventListener('click', startAdventure);
+quitAdvBtn.addEventListener('click', quitAdventure);
+resetAdvBtn.addEventListener('click', () => {
+  if (!confirm('Start Island Air Mail over from the first delivery?')) return;
+  const wasActive = adventure.active;
+  adventure.reset();
+  if (wasActive) { adventure.stop(); adventure.begin(); } else refreshMenu();
+});
 resumeBtn.addEventListener('click', closeMenu);
+refreshMenu();
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => sound.unlock()); // browsers need a gesture to start audio
 const input = new Input();
 const hud = new Hud(document.getElementById('hud'));
@@ -174,6 +220,7 @@ function updateCamera(dt) {
   const targetFov = cockpit ? 72 : 60 + THREE.MathUtils.clamp((flight.airspeed - 20) / 35, 0, 1) * 8;
   fov += (targetFov - fov) * k(2);
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  if (adventure.shot(camera, dt)) { snap = true; return; } // delivery scene: the adventure directs the camera
 
   if (cockpit) {
     camera.position.copy(eye).applyQuaternion(flight.q).add(flight.pos);
@@ -199,10 +246,10 @@ applyQuality();
 const clock = new THREE.Clock();
 function frame() {
   const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
-  if (!menu.hidden) { if (input.consume('Digit1')) choose('red'); else if (input.consume('Digit2')) choose('blue'); }
+  if (!menu.hidden) { if (input.consume('Digit1')) choose('red'); else if (input.consume('Digit2')) choose('blue'); else if (input.consume('Digit3')) startAdventure(); }
   if (input.consume('Escape') && started) { if (paused) closeMenu(); else openMenu(); }
-  if (input.consume('KeyR')) { flight.reset(); snap = true; }
-  if (input.consume('KeyT')) { flight.startApproach(world.approaches[approachIdx++ % world.approaches.length]); snap = true; }
+  if (input.consume('KeyR') && !adventure.holdsPlane) { flight.reset(); snap = true; }
+  if (input.consume('KeyT') && !adventure.active) { flight.startApproach(world.approaches[approachIdx++ % world.approaches.length]); snap = true; }
   if (input.consume('KeyC')) { cockpit = !cockpit; plane.pilot.visible = !cockpit; }
   if (input.consume('KeyH')) help.hidden = !help.hidden;
   if (input.consume('KeyM')) nav.toggleMap();
@@ -212,9 +259,10 @@ function frame() {
   }
 
   const live = started && !paused; // the pause menu freezes the world
+  adventure.update(live ? dt : 0, input, live);
   if (live) {
     updateWind(time.value);
-    flight.update(dt, input);
+    if (!adventure.holdsPlane) flight.update(dt, input); // story cards and deliveries hold the plane still
     syncPlane(plane, flight, dt);
     smoke.update(dt, plane.group, flight);
   }
@@ -223,9 +271,9 @@ function frame() {
   world.update(live || !started ? dt : 0, camera, flight.pos);
   if (live || !started) { landmarks.update(dt, time.value); life.update(dt); }
   sound.update(flight, !live);
-  nav.update(dt, flight);
+  nav.update(dt, flight, adventure.target);
   cover.update(camera.position);
-  hud.update(dt, flight, world, `WIND ${wind.speed ? `${wind.from}° ${Math.round(wind.now)} m/s` : 'CALM'}\nGFX ${auto ? 'auto · ' : ''}${QUALITY[level].name}${fps ? ` · ${fps} fps` : ''}`);
+  hud.update(dt, flight, world, adventure.target, `WIND ${wind.speed ? `${wind.from}° ${Math.round(wind.now)} m/s` : 'CALM'}\nGFX ${auto ? 'auto · ' : ''}${QUALITY[level].name}${fps ? ` · ${fps} fps` : ''}`);
   composer.render();
   monitor(raw);
   input.endFrame();
