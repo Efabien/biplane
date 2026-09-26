@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Biplane</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Special+Elite&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #2a2118; --sepia: #6b4a2a; --red: #a8321f; --paper: #f1e7cc; --paper-2: #e2d3ad;
+      --leather: linear-gradient(#422e20, #281b13); --brass: linear-gradient(135deg, #f6e0a6, #b8893f 45%, #6e4f1f);
+      --type: 'Special Elite', 'Courier New', monospace; --dial: 'Oswald', 'Arial Narrow', sans-serif;
+    }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #dfeae6; font-family: var(--type); }
+    canvas { display: block; width: 100%; height: 100%; }
+    #hud { position: fixed; left: 12px; top: 12px; max-width: calc(50vw - 24px); height: auto; pointer-events: none;
+           filter: drop-shadow(0 3px 8px rgba(0, 0, 0, .3)); }
+    #compass { position: fixed; top: 12px; right: 12px; width: auto; height: auto; pointer-events: none; filter: drop-shadow(0 3px 8px rgba(0, 0, 0, .3)); }
+    #minimap { position: fixed; right: 12px; bottom: 12px; width: auto; height: auto; pointer-events: none; filter: drop-shadow(0 3px 8px rgba(0, 0, 0, .3)); }
+
+    /* Help: a typed card on aged paper */
+    #help { position: fixed; left: 12px; bottom: 12px; margin: 0; padding: 10px 14px; pointer-events: none; white-space: pre;
+            font: 12px/1.55 var(--type); color: var(--ink); border-radius: 4px; border: 1px solid rgba(107, 74, 42, .5);
+            background: radial-gradient(ellipse at 30% 20%, var(--paper), var(--paper-2)); box-shadow: 0 3px 10px rgba(0, 0, 0, .25); }
+    #help b { color: var(--red); font-weight: normal; }
+
+    /* Start / pause menu: leather folio with brass-edged cards */
+    #menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(30, 24, 18, .35); }
+    #menu[hidden] { display: none; }
+    #menu .folio { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 26px 28px 22px; max-width: calc(100vw - 32px);
+                   background: var(--leather); color: #f3e6c4; border-radius: 12px; box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
+                   outline: 1px dashed rgba(230, 200, 150, .45); outline-offset: -8px; }
+    #menu h1 { margin: 0; font: 600 30px var(--dial); letter-spacing: .18em; text-transform: uppercase;
+               background: var(--brass); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    #menu .sub { margin: 0; opacity: .85; }
+    #menu .cards { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+    #menu .plane { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 12px; align-items: center; text-align: left; width: 270px;
+                   padding: 12px 14px; border: 2px solid #b8893f; border-radius: 6px; cursor: pointer; color: var(--ink);
+                   background: radial-gradient(ellipse at 30% 20%, var(--paper), var(--paper-2)); font: 15px var(--type); }
+    #menu .plane:hover, #menu .plane:focus-visible { outline: 2px solid #f6e0a6; outline-offset: 2px; }
+    #menu .plane.current { border-color: var(--red); }
+    #menu .swatch { grid-row: span 2; width: 32px; height: 32px; border-radius: 4px; box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .15); }
+    #menu small { grid-column: 2; font-size: 11px; color: var(--sepia); }
+    #menu kbd { grid-row: 1 / span 2; grid-column: 3; font: 11px var(--type); color: var(--sepia); border: 1px solid currentColor; border-radius: 3px; padding: 1px 5px; }
+    #menu .opts { display: grid; grid-template-columns: auto auto; gap: 8px 14px; align-items: center; }
+    #menu .opts span { font-size: 13px; opacity: .8; text-align: right; }
+    #menu .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+    #menu .seg button { padding: 5px 11px; border-radius: 4px; cursor: pointer; font: 12px var(--type); color: #f3e6c4;
+                        background: transparent; border: 1px solid rgba(243, 230, 196, .4); }
+    #menu .seg button.on { background: var(--brass); color: var(--ink); border-color: #f6e0a6; }
+    #menu #resume { padding: 8px 22px; border-radius: 5px; cursor: pointer; font: 600 14px var(--dial); letter-spacing: .12em; text-transform: uppercase;
+                    color: var(--ink); background: var(--brass); border: none; }
+    #menu #resume[hidden] { display: none; }
+    #menu .hint { margin: 0; font-size: 11px; opacity: .6; }
+  </style>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <canvas id="hud"></canvas>
+  <canvas id="compass"></canvas>
+  <canvas id="minimap"></canvas>
+  <p id="help"><b>W / S</b>   throttle        <b>↑ / ↓</b>  pitch (stick: ↓ = pull up)
+<b>← / →</b>   roll            <b>A / D</b>  rudder / steer on ground
+<b>B</b>       wheel brake     <b>C</b>      chase / cockpit camera
+<b>R</b>       reset           <b>T</b>      landing practice
+<b>G</b>       graphics        <b>M</b>      map
+<b>Esc</b>     pause menu      <b>H</b>      hide this card</p>
+  <div id="menu">
+    <div class="folio">
+      <h1>Biplane</h1>
+      <p class="sub">Choose your plane</p>
+      <div class="cards">
+        <button class="plane" data-plane="red"><span class="swatch" style="background:#c4453a"></span>Red biplane<kbd>1</kbd><small>Airfield · dirt runway 36</small></button>
+        <button class="plane" data-plane="blue"><span class="swatch" style="background:#3d6fb0"></span>Blue biplane<kbd>2</kbd><small>Meadow strip · grass runway 09</small></button>
+      </div>
+      <div class="opts">
+        <span>Time of day</span><div class="seg" data-opt="time"></div>
+        <span>Wind</span><div class="seg" data-opt="wind"></div>
+        <span>Sound</span><div class="seg" data-opt="sound"></div>
+      </div>
+      <button id="resume" hidden>Resume</button>
+      <p class="hint">Esc opens this menu during flight</p>
+    </div>
+  </div>
+  <script>
+    // If the game scripts can't run, say so on the menu instead of showing buttons that do nothing
+    const menuProblem = (msg) => { document.querySelector('#menu .cards').innerHTML = `<p style="max-width:560px;white-space:pre-line">${msg}</p>`; };
+    if (location.protocol === 'file:')
+      menuProblem('This page must be served over http (browsers block the game scripts from file://).\nDouble-click play.command, or run:  python3 -m http.server  and open http://localhost:8000');
+    addEventListener('error', (e) => menuProblem(`The game failed to start: ${e.message}\nTry a hard reload (Cmd+Shift+R).`));
+  </script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
