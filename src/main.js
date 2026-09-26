@@ -49,8 +49,9 @@ const sound = createSound();
 
 // ---- Start / pause menu: choose or switch plane, time of day, wind, sound ----
 const menu = document.getElementById('menu'), resumeBtn = document.getElementById('resume');
-const settings = { time: 'golden', wind: 'light', sound: 'on' };
+const settings = { start: 'home', time: 'golden', wind: 'light', sound: 'on' };
 const OPTIONS = {
+  start: [['home', 'Home strip'], ...STRIPS.map((s, i) => [String(i), s.name])],
   time: Object.entries(TIMES).map(([k, t]) => [k, t.label]),
   wind: Object.entries(WINDS).map(([k, w]) => [k, w.label]),
   sound: [['on', 'On'], ['off', 'Off']],
@@ -60,6 +61,7 @@ function applySetting(opt, value) {
   if (opt === 'time') world.setTime(value);
   if (opt === 'wind') Object.assign(wind, { speed: WINDS[value].speed, gust: WINDS[value].gust });
   if (opt === 'sound') sound.setEnabled(value === 'on');
+  if (opt === 'start') menu.querySelectorAll('.plane').forEach((b) => { b.querySelector('small').textContent = stripLabel(startFor(b.dataset.plane)); });
   menu.querySelectorAll(`[data-opt="${opt}"] button`).forEach((b) => b.classList.toggle('on', b.dataset.value === value));
 }
 for (const [opt, list] of Object.entries(OPTIONS)) {
@@ -81,14 +83,25 @@ function openMenu() {
   menu.querySelectorAll('.plane').forEach((b) => b.classList.toggle('current', planes[b.dataset.plane] === plane));
 }
 function closeMenu() { if (started) { paused = false; menu.hidden = true; } }
-// Fly the chosen plane from its home strip; the other one goes back to its parking spot
+// Where a plane starts: its home strip, or the landing site picked under "Start at"
+function startFor(id) {
+  if (settings.start === 'home') return HOMES[id];
+  const strip = STRIPS[+settings.start];
+  return { strip, dir: strip.takeoff };
+}
+function stripLabel({ strip, dir }) {
+  const bearing = (THREE.MathUtils.radToDeg(Math.atan2(dir * strip.fx, -dir * strip.fz)) + 360) % 360;
+  const rwy = String(Math.round(bearing / 10) || 36).padStart(2, '0');
+  return `${strip.name} · ${strip.surface} runway ${rwy}`;
+}
+// Fly the chosen plane from its start strip; the other one goes back to its parking spot
 function choose(id) {
   const other = id === 'red' ? 'blue' : 'red';
   plane.pilot.visible = true;
   plane = planes[id];
   plane.pilot.visible = !cockpit;
   park(other);
-  flight.home = HOMES[id];
+  flight.home = startFor(id);
   flight.reset();
   snap = true;
   started = true;

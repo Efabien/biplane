@@ -8,19 +8,20 @@ export const X0 = -HALF, Z0 = -HALF, SEGX = 1024, SEGZ = 512, CELL = (HALF * 2) 
 export const GRID = { x0: X0, z0: Z0, cell: CELL, segx: SEGX, segz: SEGZ };
 export const GLIDE = (3 * Math.PI) / 180; // standard 3° approach path
 
-// Landing sites. heading = direction of the strip's local -Z (0 = north); aim = aiming point distance from each end.
+// Landing sites. heading = direction of the strip's local -Z (0 = north); aim = aiming point distance from each end;
+// takeoff = direction to start a take-off from the menu (1 = along heading, -1 = against it).
 export const STRIPS = [
   { name: 'Airfield', x: 0, z: 0, heading: 0, len: RW_L, w: RW_W, h: RUNWAY_H, aim: 90, surface: 'dirt' },
   { name: 'Meadow strip', x: -150, z: -920, heading: Math.PI / 2, len: 450, w: 25, h: 32, aim: 70, surface: 'grass' },
   { name: 'Beach strip', x: 425, z: 1775, heading: -1.22, len: 400, w: 22, h: 2, aim: 70, surface: 'sand' },
   // short, rising 5 % toward its heading: land uphill (heading) and take off downhill
-  { name: 'Mountain meadow', x: 625, z: -1475, heading: 1.047, len: 250, w: 20, h: 214, aim: 45, surface: 'grass', slope: 0.05 },
+  { name: 'Mountain meadow', x: 625, z: -1475, heading: 1.047, len: 250, w: 20, h: 214, aim: 45, surface: 'grass', slope: 0.05, takeoff: -1 },
   // on the meadow floor of the volcano's crater: fly in low through the breach in the rim (heading), leave the same way
-  { name: 'Caldera', x: 4450, z: -350, heading: -1.22, len: 260, w: 20, h: 215, aim: 40, surface: 'grass' },
+  { name: 'Caldera', x: 4450, z: -350, heading: -1.22, len: 260, w: 20, h: 215, aim: 40, surface: 'grass', takeoff: -1 },
   // on a grassy promontory that ends in a sea cliff: land inland (heading), take off over the edge
-  { name: 'Headland', x: 3600, z: 1480, heading: 0, len: 300, w: 22, h: 45, aim: 60, surface: 'grass', blend: 40, headland: true },
+  { name: 'Headland', x: 3600, z: 1480, heading: 0, len: 300, w: 22, h: 45, aim: 60, surface: 'grass', blend: 40, headland: true, takeoff: -1 },
 ];
-for (const st of STRIPS) { st.fx = -Math.sin(st.heading); st.fz = -Math.cos(st.heading); st.slope ??= 0; st.blend ??= 160; }
+for (const st of STRIPS) { st.fx = -Math.sin(st.heading); st.fz = -Math.cos(st.heading); st.slope ??= 0; st.blend ??= 160; st.takeoff ??= 1; }
 const along = (st, x, z) => (x - st.x) * st.fx + (z - st.z) * st.fz;
 const across = (st, x, z) => -(x - st.x) * st.fz + (z - st.z) * st.fx;
 export function stripAt(x, z) {
