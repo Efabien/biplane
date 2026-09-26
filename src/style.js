@@ -222,7 +222,7 @@ export function skyMaterial() {
 }
 
 // ---- Cumulus: bumpy puffs flattened at the cloud base, blue-grey underside, bright warm tops ----
-// Drift happens in the shader (per-cloud wrap around the island), so instance matrices stay static.
+// Drift happens in the shader (per-cloud wrap across the map: wrap = { x0, span }), so instance matrices stay static.
 export function cloudMaterial(wrap) {
   const mat = new THREE.ShaderMaterial({
     fog: true, transparent: true, depthWrite: false, // puffs are sorted back-to-front each frame (world.js)
@@ -249,7 +249,7 @@ export function cloudMaterial(wrap) {
         // cauliflower bumps, computed before drift so shapes don't boil while moving
         float bump = vnoise3(wp.xyz * 0.035 + uTime * 0.015) * 0.6 + vnoise3(wp.xyz * 0.09) * 0.4;
         wp.xyz += wn * (bump - 0.4) * length(m[0].xyz) * 0.35;
-        float cx = mod(aSpan.z + uDrift + ${wrap.toFixed(1)}, ${(2 * wrap).toFixed(1)}) - ${wrap.toFixed(1)};
+        float cx = ${wrap.x0.toFixed(1)} + mod(aSpan.z + uDrift - ${wrap.x0.toFixed(1)}, ${wrap.span.toFixed(1)});
         wp.x += cx - aSpan.z;
         wp.y = max(wp.y, aSpan.x + fract(m[3].x * 0.137 + m[3].z * 0.071) * 0.8); // staggered so flat bases don't z-fight
         vH = clamp((wp.y - aSpan.x) / (aSpan.y - aSpan.x), 0.0, 1.0);
@@ -302,7 +302,7 @@ export function cloudSpriteMaterial(wrap) {
       #include <fog_pars_vertex>
       void main() {
         vec3 transformed = position;
-        transformed.x += mod(aSpan.z + uDrift + ${wrap.toFixed(1)}, ${(2 * wrap).toFixed(1)}) - ${wrap.toFixed(1)} - aSpan.z;
+        transformed.x += ${wrap.x0.toFixed(1)} + mod(aSpan.z + uDrift - ${wrap.x0.toFixed(1)}, ${wrap.span.toFixed(1)}) - aSpan.z;
         vec4 mv = viewMatrix * vec4(transformed, 1.0);
         gl_Position = projectionMatrix * mv;
         gl_PointSize = aSpan.w * uScale / max(-mv.z, 1.0);
@@ -334,10 +334,11 @@ export function cloudSpriteMaterial(wrap) {
 }
 
 // ---- Stylized water: depth-tinted, soft waves, sky reflection, sun shimmer, shore foam, cloud shadows ----
-export function waterMaterial(depthTex, half, seg) {
+export function waterMaterial(depthTex, grid) {
+  const { x0, z0, cell, segx, segz } = grid;
   const mat = new THREE.ShaderMaterial({
     fog: true,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uDepth: { value: null }, uHalf: { value: half } }]),
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uDepth: { value: null } }]),
     vertexShader: /* glsl */ `
       varying vec3 vW;
       #include <fog_pars_vertex>
@@ -350,14 +351,13 @@ export function waterMaterial(depthTex, half, seg) {
       }`,
     fragmentShader: /* glsl */ `
       uniform sampler2D uDepth;
-      uniform float uHalf;
       uniform float uTime;
       varying vec3 vW;
       #include <fog_pars_fragment>
       ${CLOUD_SHADOW}
       void main() {
-        vec2 g01 = (vW.xz + uHalf) / (2.0 * uHalf);
-        vec2 uv = (g01 * ${seg}.0 + 0.5) / ${seg + 1}.0;
+        vec2 g01 = (vW.xz - vec2(${x0.toFixed(1)}, ${z0.toFixed(1)})) / vec2(${(segx * cell).toFixed(1)}, ${(segz * cell).toFixed(1)});
+        vec2 uv = (g01 * vec2(${segx}.0, ${segz}.0) + 0.5) / vec2(${segx + 1}.0, ${segz + 1}.0);
         float depth = (g01.x < 0.0 || g01.y < 0.0 || g01.x > 1.0 || g01.y > 1.0) ? 1.0 : texture2D(uDepth, uv).r;
 
         vec2 p = vW.xz;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HALF, SEG, CELL, WATER, STRIPS } from './world.js';
+import { X0, Z0, SEGX, SEGZ, CELL, WATER, STRIPS } from './world.js';
 import { time, cloudUniform, CLOUD_SHADOW, atmo } from './style.js';
 
 // Ground cover near the camera: grass tufts and flower clusters in a tile that wraps around the camera.
@@ -44,7 +44,7 @@ function material(heightTex, colorTex, flower) {
       varying vec3 vW;
       #include <fog_pars_vertex>
       float heightAt(vec2 p) {
-        vec2 g = clamp((p + ${HALF.toFixed(1)}) / ${CELL.toFixed(4)}, vec2(0.0), vec2(${SEG - 1}.0));
+        vec2 g = clamp((p - vec2(${X0.toFixed(1)}, ${Z0.toFixed(1)})) / ${CELL.toFixed(4)}, vec2(0.0), vec2(${SEGX - 1}.0, ${SEGZ - 1}.0));
         ivec2 i = ivec2(floor(g));
         vec2 f = fract(g);
         float a = texelFetch(uHeight, i, 0).r, b = texelFetch(uHeight, i + ivec2(1, 0), 0).r;
@@ -73,7 +73,7 @@ function material(heightTex, colorTex, flower) {
           ? `float k = rnd(aOff.xy);
              vCol = k < 0.35 ? vec3(0.95, 0.93, 0.86) : k < 0.6 ? vec3(0.98, 0.78, 0.25) : k < 0.8 ? vec3(0.92, 0.55, 0.62) : vec3(0.62, 0.55, 0.88);
              vTip = 1.0;`
-          : `vec2 cuv = ((wp + ${HALF.toFixed(1)}) / ${(2 * HALF).toFixed(1)} * ${SEG}.0 + 0.5) / ${SEG + 1}.0;
+          : `vec2 cuv = ((wp - vec2(${X0.toFixed(1)}, ${Z0.toFixed(1)})) / ${CELL.toFixed(4)} + 0.5) / vec2(${SEGX + 1}.0, ${SEGZ + 1}.0);
              vCol = texture2D(uColor, cuv).rgb * (0.9 + 0.2 * rnd(aOff.xy));`}
         vW = transformed;
         gl_Position = projectionMatrix * viewMatrix * vec4(transformed, 1.0);

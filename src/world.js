@@ -3,7 +3,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SUN_DIR, NCS, time, drift, wind, applyTime, cloudUniform, paint, stripeTex, skyMaterial, cloudMaterial, cloudSpriteMaterial, waterMaterial } from './style.js';
 
 export const HALF = 2000, WATER = 0, RUNWAY_H = 15, RW_L = 600, RW_W = 30;
-export const SEG = 512, CELL = (HALF * 2) / SEG;
+// World grid: the home island (radius HALF, centred on the origin) plus a volcanic island to the east
+export const X0 = -HALF, Z0 = -HALF, SEGX = 1024, SEGZ = 512, CELL = (HALF * 2) / SEGZ, WX = SEGX * CELL, WZ = SEGZ * CELL;
+export const GRID = { x0: X0, z0: Z0, cell: CELL, segx: SEGX, segz: SEGZ };
 export const GLIDE = (3 * Math.PI) / 180; // standard 3° approach path
 
 // Landing sites. heading = direction of the strip's local -Z (0 = north); aim = aiming point distance from each end.
@@ -13,8 +15,12 @@ export const STRIPS = [
   { name: 'Beach strip', x: 425, z: 1775, heading: -1.22, len: 400, w: 22, h: 2, aim: 70, surface: 'sand' },
   // short, rising 5 % toward its heading: land uphill (heading) and take off downhill
   { name: 'Mountain meadow', x: 625, z: -1475, heading: 1.047, len: 250, w: 20, h: 214, aim: 45, surface: 'grass', slope: 0.05 },
+  // on the meadow floor of the volcano's crater: fly in low through the breach in the rim (heading), leave the same way
+  { name: 'Caldera', x: 4450, z: -350, heading: -1.22, len: 260, w: 20, h: 215, aim: 40, surface: 'grass' },
+  // on a grassy promontory that ends in a sea cliff: land inland (heading), take off over the edge
+  { name: 'Headland', x: 3600, z: 1480, heading: 0, len: 300, w: 22, h: 45, aim: 60, surface: 'grass', blend: 40, headland: true },
 ];
-for (const st of STRIPS) { st.fx = -Math.sin(st.heading); st.fz = -Math.cos(st.heading); st.slope ??= 0; }
+for (const st of STRIPS) { st.fx = -Math.sin(st.heading); st.fz = -Math.cos(st.heading); st.slope ??= 0; st.blend ??= 160; }
 const along = (st, x, z) => (x - st.x) * st.fx + (z - st.z) * st.fz;
 const across = (st, x, z) => -(x - st.x) * st.fz + (z - st.z) * st.fx;
 export function stripAt(x, z) {
@@ -59,6 +65,9 @@ export const VILLAGE = { x: -330, z: 40 };
 export const LIGHTHOUSE = { x: 1840, z: 260 };
 export const CASTLE = { x: 725, z: 1150 };
 export const RUIN = { x: 750, z: -650, y: 150 }; // floating island above the lake
+// Volcanic island: crater floor + rim, breached toward the west-south-west (bx, bz points out through the gap)
+export const ISLE = { x: 4100, z: 100, rx: 1750, rz: 1650 };
+export const VOLCANO = { x: 4450, z: -350, floor: 215, floorR: 330, rimR: 470, rim: 340, foot: 1300, bx: -0.94, bz: 0.34 };
 // Railway: straight line across a valley at a fixed deck height; tunnels at both ends (portals computed below)
 export const RAIL = { cx: -650, cz: 1175, dir: (40 * Math.PI) / 180, L: 350, deck: 80 };
 RAIL.fx = Math.sin(RAIL.dir); RAIL.fz = Math.cos(RAIL.dir);
@@ -67,17 +76,43 @@ export const railV = (x, z) => -(x - RAIL.cx) * RAIL.fz + (z - RAIL.cz) * RAIL.f
 
 // ---- terrain height ------------------------------------------------------
 // Rolling hills, a mountain ring, a lake, island falloff into the sea, flattened runway.
-function baseHeight(x, z) {
+function homeIsland(x, z) {
   const r = Math.hypot(x, z) / HALF;
   let h = (fbm(x * 0.0011 + 3.1, z * 0.0011 - 1.7) - 0.42) * 140 + 14;
   const ridge = fbm(x * 0.003 + 11, z * 0.003 + 5);
   h += smooth(0.5, 0.75, r) * (1 - smooth(0.8, 0.92, r)) * ridge * ridge * 750;
   h -= 60 * (1 - smooth(0, 380, Math.hypot(x - 750, z + 650)));
   h += (noise(x * 0.025, z * 0.025) - 0.5) * 3 + (noise(x * 0.06 + 9, z * 0.06) - 0.5) * 1.2; // small bumps
-  h += (-35 - h) * smooth(0.9, 1.0, r);
+  return h + (-35 - h) * smooth(0.9, 1.0, r);
+}
+// Low green hills around a volcano whose crater holds a flat meadow; a breach through the rim leads in from the west
+function volcanicIsland(x, z) {
+  const V = VOLCANO, r = Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz);
+  if (r > 1.05) return -35;
+  let h = (fbm(x * 0.0012 + 21.3, z * 0.0012 - 7.9) - 0.45) * 100 + 12;
+  h += (noise(x * 0.025 + 40, z * 0.025) - 0.5) * 3 + (noise(x * 0.06 + 49, z * 0.06) - 0.5) * 1.2;
+  const d = Math.hypot(x - V.x, z - V.z);
+  if (d < V.foot) {
+    let v = d < V.rimR ? V.floor + (V.rim - V.floor) * smooth(V.floorR, V.rimR, d) : V.rim * (1 - smooth(V.rimR, V.foot, d));
+    v += (fbm(x * 0.012 + 7, z * 0.012 - 3) - 0.5) * 50 * smooth(V.rimR, 650, d) * (1 - smooth(900, V.foot, d)); // ravines
+    const a = (x - V.x) * V.bx + (z - V.z) * V.bz, lat = Math.abs(-(x - V.x) * V.bz + (z - V.z) * V.bx);
+    if (a > 0) v += (Math.min(v, V.floor - Math.max(0, a - V.floorR) * 0.05) - v) * (1 - smooth(60, 170, lat)); // the breach
+    h = Math.max(h, v);
+  }
+  h += (-35 - h) * smooth(0.85, 1.0, r);
+  // The headland: a broad green ridge running out to sea under its strip, cut off by a cliff just past the seaward end
+  for (const st of STRIPS) if (st.headland) {
+    const u = along(st, x, z), tip = -st.len / 2 - 25;
+    const lift = st.h * (1 - smooth(70, 240, Math.abs(across(st, x, z)))) * smooth(tip - 30, tip, u) * (1 - smooth(500, 900, u));
+    if (lift > 1) h = Math.max(h, lift * (1 + (noise(x * 0.03, z * 0.03) - 0.5) * 0.1 * smooth(40, 90, Math.abs(across(st, x, z)))));
+  }
+  return h;
+}
+function baseHeight(x, z) {
+  let h = Math.max(homeIsland(x, z), volcanicIsland(x, z));
   for (const st of STRIPS) {
     const dv = Math.max(Math.abs(across(st, x, z)) - st.w / 2 - 15, 0), du = Math.max(Math.abs(along(st, x, z)) - st.len / 2 - 30, 0);
-    h += (st.h + st.slope * along(st, x, z) - h) * (1 - smooth(0, 160, Math.hypot(du, dv)));
+    h += (st.h + st.slope * along(st, x, z) - h) * (1 - smooth(0, st.blend, Math.hypot(du, dv)));
   }
   return h;
 }
@@ -104,17 +139,17 @@ function rawHeight(x, z) {
   return h < 0 ? h * 2.5 : h; // steeper below sea level: a crisp shoreline instead of a flickering one
 }
 
-const H = new Float32Array((SEG + 1) * (SEG + 1));
-for (let j = 0; j <= SEG; j++)
-  for (let i = 0; i <= SEG; i++) H[j * (SEG + 1) + i] = rawHeight(-HALF + i * CELL, -HALF + j * CELL);
+const H = new Float32Array((SEGX + 1) * (SEGZ + 1));
+for (let j = 0; j <= SEGZ; j++)
+  for (let i = 0; i <= SEGX; i++) H[j * (SEGX + 1) + i] = rawHeight(X0 + i * CELL, Z0 + j * CELL);
 
 // Exact height of the rendered terrain triangles (matches PlaneGeometry's diagonal)
 export function groundAt(x, z) {
-  const gx = (x + HALF) / CELL, gz = (z + HALF) / CELL;
-  if (gx < 0 || gz < 0 || gx >= SEG || gz >= SEG) return -35;
+  const gx = (x - X0) / CELL, gz = (z - Z0) / CELL;
+  if (gx < 0 || gz < 0 || gx >= SEGX || gz >= SEGZ) return -35;
   const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
-  const k = j * (SEG + 1) + i;
-  const ha = H[k], hb = H[k + SEG + 1], hc = H[k + SEG + 2], hd = H[k + 1];
+  const k = j * (SEGX + 1) + i;
+  const ha = H[k], hb = H[k + SEGX + 1], hc = H[k + SEGX + 2], hd = H[k + 1];
   return fx + fz <= 1
     ? ha + (hd - ha) * fx + (hb - ha) * fz
     : hc + (hb - hc) * (1 - fx) + (hd - hc) * (1 - fz);
@@ -124,22 +159,22 @@ export function slopeAt(x, z) {
 }
 
 // ---- obstacle grid (trees, houses, buildings) ----------------------------
-const GCELL = 50, GN = (HALF * 2) / GCELL;
-const grid = Array.from({ length: GN * GN }, () => []);
+const GCELL = 50, GNX = WX / GCELL, GNZ = WZ / GCELL;
+const grid = Array.from({ length: GNX * GNZ }, () => []);
 export function addObstacle(x, z, r, top, bottom = -Infinity) {
-  const i = Math.floor((x + HALF) / GCELL), j = Math.floor((z + HALF) / GCELL);
-  if (i >= 0 && j >= 0 && i < GN && j < GN) grid[j * GN + i].push({ x, z, r, top, bottom });
+  const i = Math.floor((x - X0) / GCELL), j = Math.floor((z - Z0) / GCELL);
+  if (i >= 0 && j >= 0 && i < GNX && j < GNZ) grid[j * GNX + i].push({ x, z, r, top, bottom });
 }
 const dynamic = new Map(); // movable obstacles, e.g. the parked plane
 export function setDynamicObstacle(key, x, z, r, top) { dynamic.set(key, { x, z, r, top }); }
 export function hitObstacle(x, y, z) {
   for (const o of dynamic.values()) if (y - 1 < o.top && (o.x - x) ** 2 + (o.z - z) ** 2 < (o.r + 3) ** 2) return true;
-  const ci = Math.floor((x + HALF) / GCELL), cj = Math.floor((z + HALF) / GCELL);
+  const ci = Math.floor((x - X0) / GCELL), cj = Math.floor((z - Z0) / GCELL);
   for (let j = cj - 1; j <= cj + 1; j++) {
-    if (j < 0 || j >= GN) continue;
+    if (j < 0 || j >= GNZ) continue;
     for (let i = ci - 1; i <= ci + 1; i++) {
-      if (i < 0 || i >= GN) continue;
-      for (const o of grid[j * GN + i]) {
+      if (i < 0 || i >= GNX) continue;
+      for (const o of grid[j * GNX + i]) {
         if (y - 1 > o.top || y + 1 < o.bottom) continue;
         const dx = o.x - x, dz = o.z - z, rr = o.r + 3;
         if (dx * dx + dz * dz < rr * rr) return true;
@@ -182,16 +217,17 @@ export function buildWorld(scene) {
   scene.add(sky);
 
   // Terrain with height/slope vertex colors
-  const tGeo = new THREE.PlaneGeometry(HALF * 2, HALF * 2, SEG, SEG).rotateX(-Math.PI / 2);
+  const tGeo = new THREE.PlaneGeometry(WX, WZ, SEGX, SEGZ).rotateX(-Math.PI / 2).translate(X0 + WX / 2, 0, Z0 + WZ / 2);
   const pos = tGeo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   const sand = new THREE.Color(0xe2cf9e), grassA = new THREE.Color(0xa8d060), grassB = new THREE.Color(0x5c9a46);
-  const rock = new THREE.Color(0x8e8878), snow = new THREE.Color(0xf4f6f8);
+  const rock = new THREE.Color(0x8e8878), snow = new THREE.Color(0xf4f6f8), fern = new THREE.Color(0x7cc653), jungle = new THREE.Color(0x3a8a3c);
   for (let v = 0; v < pos.count; v++) {
     const x = pos.getX(v), z = pos.getZ(v), h = groundAt(x, z), s = slopeAt(x, z);
     pos.setY(v, h);
-    const n = fbm(x * 0.01, z * 0.01);
+    const n = fbm(x * 0.01, z * 0.01), tropic = x > HALF && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) < 1.05;
     if (h < 2.5) col.copy(sand);
+    else if (tropic) col.copy(s > 0.9 ? rock : fern).lerp(jungle, s > 0.9 ? 0.35 : smooth(0.3, 0.7, n + h / 500)); // lush volcanic island, rock only on cliffs
     else if (h > 250 + n * 60) col.copy(snow);
     else if (h > 140 + n * 40 || s > 0.75) col.copy(rock);
     else col.copy(grassA).lerp(grassB, smooth(0.35, 0.65, n));
@@ -199,30 +235,59 @@ export function buildWorld(scene) {
   }
   tGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   tGeo.computeVertexNormals();
-  const terrain = new THREE.Mesh(tGeo, paint(0xffffff, { vertexColors: true }, { mottle: true }));
-  terrain.receiveShadow = terrain.castShadow = true;
+
+  // Split into CHUNK×CHUNK-cell meshes so the main and shadow passes can frustum-cull what's out of view.
+  // Normals come from the full grid (seamless edges); each chunk keeps PlaneGeometry's diagonals (matches groundAt).
+  const CHUNK = 64, nrm = tGeo.attributes.normal, terrainMat = paint(0xffffff, { vertexColors: true }, { mottle: true });
+  const cIndex = [];
+  for (let j = 0; j < CHUNK; j++)
+    for (let i = 0; i < CHUNK; i++) {
+      const a = j * (CHUNK + 1) + i, b = a + CHUNK + 1;
+      cIndex.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  const terrain = new THREE.Group();
+  for (let cj = 0; cj < SEGZ; cj += CHUNK)
+    for (let ci = 0; ci < SEGX; ci += CHUNK) {
+      const n = (CHUNK + 1) ** 2, cp = new Float32Array(n * 3), cn = new Float32Array(n * 3), cc = new Float32Array(n * 3);
+      for (let j = 0, k = 0; j <= CHUNK; j++)
+        for (let i = 0; i <= CHUNK; i++, k += 3) {
+          const v = (cj + j) * (SEGX + 1) + ci + i;
+          cp.set([pos.getX(v), pos.getY(v), pos.getZ(v)], k);
+          cn.set([nrm.getX(v), nrm.getY(v), nrm.getZ(v)], k);
+          cc.set(colors.subarray(v * 3, v * 3 + 3), k);
+        }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(cp, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(cn, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(cc, 3));
+      g.setIndex(cIndex);
+      g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, terrainMat);
+      m.receiveShadow = m.castShadow = true;
+      terrain.add(m);
+    }
   scene.add(terrain);
 
   // Grid textures for the GPU ground cover: exact heights + terrain colour (sRGB)
-  const heightTex = new THREE.DataTexture(H, SEG + 1, SEG + 1, THREE.RedFormat, THREE.FloatType);
+  const heightTex = new THREE.DataTexture(H, SEGX + 1, SEGZ + 1, THREE.RedFormat, THREE.FloatType);
   heightTex.needsUpdate = true;
   const colorData = new Uint8Array(pos.count * 4);
   for (let v = 0; v < pos.count; v++) {
     col.fromArray(colors, v * 3).convertLinearToSRGB();
     colorData.set([col.r * 255, col.g * 255, col.b * 255, 255], v * 4);
   }
-  const colorTex = new THREE.DataTexture(colorData, SEG + 1, SEG + 1);
+  const colorTex = new THREE.DataTexture(colorData, SEGX + 1, SEGZ + 1);
   colorTex.colorSpace = THREE.SRGBColorSpace;
   colorTex.magFilter = colorTex.minFilter = THREE.LinearFilter;
   colorTex.needsUpdate = true;
 
   // Sea + lake share one water plane; depth under the surface comes from the height grid
-  const depthData = new Uint8Array((SEG + 1) * (SEG + 1));
+  const depthData = new Uint8Array((SEGX + 1) * (SEGZ + 1));
   for (let k = 0; k < depthData.length; k++) depthData[k] = Math.round(Math.min(1, Math.max(0, (WATER - H[k]) / 60)) * 255);
-  const depthTex = new THREE.DataTexture(depthData, SEG + 1, SEG + 1, THREE.RedFormat);
+  const depthTex = new THREE.DataTexture(depthData, SEGX + 1, SEGZ + 1, THREE.RedFormat);
   depthTex.magFilter = depthTex.minFilter = THREE.LinearFilter;
   depthTex.needsUpdate = true;
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2), waterMaterial(depthTex, HALF, SEG));
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2), waterMaterial(depthTex, GRID));
   water.position.y = WATER;
   Object.assign(water.material, { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
   scene.add(water);
@@ -336,6 +401,16 @@ export function buildWorld(scene) {
     if (houses.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < 400)) continue;
     houses.push({ x, z, w: 6 + rand() * 4, d: 7 + rand() * 5, hgt: 4 + rand() * 3, rot: rand() * Math.PI });
   }
+  // Crater hamlet on the caldera floor, clear of the strip and the approach through the breach (own rng: the rest of the world stays put)
+  const hr = rng(11), V = VOLCANO, nVillage = houses.length;
+  for (let t = 0; t < 400 && houses.length < nVillage + 8; t++) {
+    const a = hr() * Math.PI * 2, d = 90 + hr() * 190;
+    const x = V.x + Math.cos(a) * d, z = V.z + Math.sin(a) * d;
+    if (Math.abs(-(x - V.x) * V.bz + (z - V.z) * V.bx) < 55) continue;
+    if (slopeAt(x, z) > 0.25 || groundAt(x, z) < V.floor - 2) continue;
+    if (houses.some((h) => (h.x - x) ** 2 + (h.z - z) ** 2 < 500)) continue;
+    houses.push({ x, z, w: 5 + hr() * 3, d: 6 + hr() * 4, hgt: 3.5 + hr() * 2, rot: Math.atan2(x - V.x, z - V.z) + (hr() - 0.5) * 0.4, r1: hr(), r2: hr() });
+  }
   const roofShape = new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1)]);
   const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
   const wallMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), paint(0xffffff), houses.length);
@@ -354,8 +429,8 @@ export function buildWorld(scene) {
     }
     place(wallMesh, i, h.x, y, h.z, h.w, h.hgt + 1, h.d, h.rot);
     place(roofMesh, i, h.x, y + h.hgt + 1, h.z, h.w * 1.15, 2.5 + h.w * 0.25, h.d * 1.1, h.rot);
-    wallMesh.setColorAt(i, col.setHex(rand() < 0.5 ? 0xf6efe0 : 0xefe3c8));
-    roofMesh.setColorAt(i, col.setHex(roofColors[Math.floor(rand() * roofColors.length)]));
+    wallMesh.setColorAt(i, col.setHex((h.r1 ?? rand()) < 0.5 ? 0xf6efe0 : 0xefe3c8));
+    roofMesh.setColorAt(i, col.setHex(roofColors[Math.floor((h.r2 ?? rand()) * roofColors.length)]));
     addObstacle(h.x, h.z, Math.max(h.w, h.d) * 0.6, y + h.hgt + 4.5);
   });
   chimneyMesh.count = chimneys.length;
@@ -383,22 +458,32 @@ export function buildWorld(scene) {
   addObstacle(wx, wz, 5, mill.position.y + 22);
 
   // Trees: clustered-blob broadleaf canopies, tiered pines, a few giant camphor trees; canopies sway
-  const MAX = 3000;
-  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.35, 1, 6).translate(0, 0.5, 0), paint(0x6b4a2e), MAX);
-  const rounds = new THREE.InstancedMesh(blobCanopy(), paint(0xffffff, {}, { wind: true }), MAX);
-  const pines = new THREE.InstancedMesh(tieredPine(), paint(0xffffff, {}, { wind: true }), MAX);
-  let nT = 0, nR = 0, nP = 0;
+  // Collected per 500 m chunk (one InstancedMesh per chunk and kind) so the main and shadow passes cull by chunk.
+  const MAX = 3000, TCH = 500, TNX = WX / TCH, TNZ = WZ / TCH;
+  const kinds = {
+    trunks: { geo: new THREE.CylinderGeometry(0.25, 0.35, 1, 6).translate(0, 0.5, 0), mat: paint(0x6b4a2e) },
+    rounds: { geo: blobCanopy(), mat: paint(0xffffff, {}, { wind: true }) },
+    pines: { geo: tieredPine(), mat: paint(0xffffff, {}, { wind: true }) },
+  };
+  const chunks = new Map();
+  let nT = 0;
+  const record = (kind, x, z, y, sx, sy, sz, ry = 0, color = null) => {
+    const ci = Math.min(TNX - 1, Math.max(0, Math.floor((x - X0) / TCH))), cj = Math.min(TNZ - 1, Math.max(0, Math.floor((z - Z0) / TCH)));
+    const key = cj * TNX + ci;
+    if (!chunks.has(key)) chunks.set(key, { trunks: [], rounds: [], pines: [] });
+    dummy.position.set(x, y, z);
+    dummy.rotation.set(0, ry, 0);
+    dummy.scale.set(sx, sy, sz);
+    dummy.updateMatrix();
+    chunks.get(key)[kind].push({ m: dummy.matrix.clone(), c: color?.clone() });
+  };
   const addTree = (x, z, s, pine) => {
     const h = groundAt(x, z);
-    place(trunks, nT++, x, h - 0.3, z, s, 3.2 * s, s);
+    record('trunks', x, z, h - 0.3, s, 3.2 * s, s);
+    nT++;
     col.setHSL(0.22 + rand() * 0.08, 0.45 + rand() * 0.17, 0.30 + rand() * 0.12);
-    if (pine) {
-      place(pines, nP, x, h + 1.8 * s, z, 2.2 * s, 7 * s, 2.2 * s, rand() * 6);
-      pines.setColorAt(nP++, col.offsetHSL(0.05, -0.05, -0.07));
-    } else {
-      place(rounds, nR, x, h + 4.4 * s, z, 2.4 * s, 2.4 * s, 2.4 * s, rand() * 6);
-      rounds.setColorAt(nR++, col);
-    }
+    if (pine) record('pines', x, z, h + 1.8 * s, 2.2 * s, 7 * s, 2.2 * s, rand() * 6, col.offsetHSL(0.05, -0.05, -0.07));
+    else record('rounds', x, z, h + 4.4 * s, 2.4 * s, 2.4 * s, 2.4 * s, rand() * 6, col);
     addObstacle(x, z, 2 * s, h + (pine ? 8.8 : 7.8) * s);
   };
   // Giant camphor trees in the meadows around the airfield (landmarks)
@@ -415,11 +500,30 @@ export function buildWorld(scene) {
     if (slopeAt(x, z) > 0.6) continue;
     addTree(x, z, 0.8 + rand() * 0.7, h > 70 || rand() < 0.15);
   }
-  trunks.count = nT; rounds.count = nR; pines.count = nP;
-  for (const o of [trunks, rounds, pines]) { o.castShadow = o.receiveShadow = true; scene.add(o); }
+  // Volcanic island: jungle-thick broadleaf woods all the way up the volcano, a few pines near the rim
+  const nHome = nT;
+  for (let t = 0; t < 60000 && nT - nHome < 4000; t++) {
+    const x = ISLE.x + (rand() * 2 - 1) * ISLE.rx, z = ISLE.z + (rand() * 2 - 1) * ISLE.rz;
+    const h = groundAt(x, z);
+    if (h < 3 || h > 330) continue;
+    if (fbm(x * 0.004 - 30, z * 0.004 + 12) < 0.44 && rand() > 0.05) continue;
+    if (houses.some((o) => (o.x - x) ** 2 + (o.z - z) ** 2 < 15 * 15)) continue;
+    if (STRIPS.some((st) => Math.abs(across(st, x, z)) < 90 && Math.abs(along(st, x, z)) < st.len / 2 + 450)) continue;
+    if (slopeAt(x, z) > 0.7) continue;
+    addTree(x, z, 0.9 + rand() * 0.8, h > 260 || rand() < 0.06);
+  }
+  for (const chunk of chunks.values())
+    for (const [kind, list] of Object.entries(chunk)) {
+      if (!list.length) continue;
+      const mesh = new THREE.InstancedMesh(kinds[kind].geo, kinds[kind].mat, list.length);
+      list.forEach(({ m, c }, i) => { mesh.setMatrixAt(i, m); if (c) mesh.setColorAt(i, c); });
+      mesh.computeBoundingSphere();
+      mesh.castShadow = mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
 
   // Clouds: towering cumulus of many smaller puffs; flat bottoms, bumps and drift happen in the shader
-  const NC = 40, PPC = 24, WRAP = HALF + 400;
+  const NC = 80, PPC = 24, WRAP = { x0: X0 - 400, span: WX + 800 }; // clouds drift east and wrap across the whole map
   const puffGeo = new THREE.SphereGeometry(1, 20, 14);
   const span = new Float32Array(NC * PPC * 4);
   const puffs = new THREE.InstancedMesh(puffGeo, cloudMaterial(WRAP), NC * PPC);
@@ -427,7 +531,7 @@ export function buildWorld(scene) {
   let pi = 0;
   for (let c = 0; c < NC; c++) {
     const W = 25 + rand() ** 1.5 * 70, B = 240 + rand() * 140, tall = W * (0.8 + rand() * 1.0);
-    const cx = (rand() * 2 - 1) * HALF, cz = (rand() * 2 - 1) * HALF;
+    const cx = X0 + rand() * WX, cz = Z0 + rand() * WZ;
     const parts = [];
     const ring = (n, dist, y, s0, s1) => {
       for (let p = 0; p < n; p++) {
@@ -508,7 +612,7 @@ export function buildWorld(scene) {
   // Feed the nearest clouds to the cloud-shadow shader
   const updateCloudShadows = (camPos) => {
     for (const c of clouds) {
-      c.cx = ((c.x + drift.value + WRAP) % (2 * WRAP) + 2 * WRAP) % (2 * WRAP) - WRAP;
+      c.cx = WRAP.x0 + (((c.x + drift.value - WRAP.x0) % WRAP.span) + WRAP.span) % WRAP.span;
       c.d = (c.cx - camPos.x) ** 2 + (c.z - camPos.z) ** 2;
     }
     order.sort((a, b) => clouds[a].d - clouds[b].d);
@@ -552,7 +656,7 @@ export function buildWorld(scene) {
         sun.shadow.map?.dispose();
         sun.shadow.map = null;
       }
-      terrain.castShadow = q.terrainShadow;
+      for (const m of terrain.children) m.castShadow = q.terrainShadow;
     },
   };
 }

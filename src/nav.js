@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { groundAt, STRIPS, VILLAGE, LIGHTHOUSE, CASTLE, RUIN, RAIL } from './world.js';
+import { groundAt, STRIPS, VILLAGE, LIGHTHOUSE, CASTLE, RUIN, RAIL, VOLCANO, X0, Z0, WX, WZ } from './world.js';
 
 // Vintage navigation: a brass-framed compass tape (top right) and an old paper map in a brass ring (bottom right).
 const PLACES = [
@@ -8,8 +8,11 @@ const PLACES = [
   { name: 'Castle', x: CASTLE.x, z: CASTLE.z },
   { name: 'Sky ruin', x: RUIN.x, z: RUIN.z },
   { name: 'Viaduct', x: RAIL.cx + RAIL.fx * (RAIL.s1 + RAIL.s2) / 2, z: RAIL.cz + RAIL.fz * (RAIL.s1 + RAIL.s2) / 2 },
+  { name: 'Volcano', x: VOLCANO.x + 420, z: VOLCANO.z - 300 },
 ];
-const EXT = 2150, MAP = 176, RING = 9, SIZE = MAP + 2 * RING;
+// The map follows the plane, showing EXT metres around it; the paper covers the whole world plus a margin of sea
+const EXT = 2150, MAP = 176, RING = 9, SIZE = MAP + 2 * RING, PPM = MAP / (2 * EXT);
+const PX0 = X0 - 400, PZ0 = Z0 - 400, PW = Math.round((WX + 800) * PPM), PH = Math.round((WZ + 800) * PPM);
 const INK = '#2a2118', SEPIA = '#6b4a2a', RED = '#a8321f';
 const DIAL_FONT = "'Oswald', 'Arial Narrow', sans-serif", TYPE_FONT = "'Special Elite', 'Courier New', monospace";
 const bearingTo = (dx, dz) => (THREE.MathUtils.radToDeg(Math.atan2(dx, -dz)) + 360) % 360; // 0 = north (-z), clockwise
@@ -33,13 +36,13 @@ const brass = (g, x0, y0, x1, y1) => {
 // Paper map, rendered once: parchment land tones with hill shading, muted ink sea, inked coastline, faint grid
 function renderPaperMap() {
   const c = document.createElement('canvas');
-  c.width = c.height = MAP;
-  const ctx = c.getContext('2d'), img = ctx.createImageData(MAP, MAP), step = (2 * EXT) / MAP;
-  const H = new Float32Array(MAP * MAP);
-  for (let py = 0; py < MAP; py++) for (let px = 0; px < MAP; px++) H[py * MAP + px] = groundAt(-EXT + (px + 0.5) * step, -EXT + (py + 0.5) * step);
-  const at = (px, py) => H[THREE.MathUtils.clamp(py, 0, MAP - 1) * MAP + THREE.MathUtils.clamp(px, 0, MAP - 1)];
-  for (let py = 0; py < MAP; py++) for (let px = 0; px < MAP; px++) {
-    const h = at(px, py), k = (py * MAP + px) * 4;
+  c.width = PW; c.height = PH;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(PW, PH), step = 1 / PPM;
+  const H = new Float32Array(PW * PH);
+  for (let py = 0; py < PH; py++) for (let px = 0; px < PW; px++) H[py * PW + px] = groundAt(PX0 + (px + 0.5) * step, PZ0 + (py + 0.5) * step);
+  const at = (px, py) => H[THREE.MathUtils.clamp(py, 0, PH - 1) * PW + THREE.MathUtils.clamp(px, 0, PW - 1)];
+  for (let py = 0; py < PH; py++) for (let px = 0; px < PW; px++) {
+    const h = at(px, py), k = (py * PW + px) * 4;
     let col;
     if (h < 0) col = h < -20 ? [150, 176, 172] : [176, 198, 188];
     else col = h < 3 ? [236, 222, 184] : h < 60 ? [226, 214, 172] : h < 140 ? [212, 196, 150] : h < 250 ? [190, 170, 128] : [240, 232, 212];
@@ -53,7 +56,9 @@ function renderPaperMap() {
   }
   ctx.putImageData(img, 0, 0);
   ctx.strokeStyle = 'rgba(107, 74, 42, 0.18)'; ctx.lineWidth = 0.6;
-  for (let i = 1; i < 6; i++) { const p = (i / 6) * MAP; ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, MAP); ctx.moveTo(0, p); ctx.lineTo(MAP, p); ctx.stroke(); }
+  const gs = (4000 / 6) * PPM; // grid lines every 667 m, as before
+  for (let p = gs; p < PW; p += gs) { ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, PH); ctx.stroke(); }
+  for (let p = gs; p < PH; p += gs) { ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(PW, p); ctx.stroke(); }
   return c;
 }
 
@@ -62,7 +67,8 @@ export function createNav() {
   const CW = 380, CH = 50;
   const cc = setupCanvas(compassEl, CW, CH), mc = setupCanvas(mapEl, SIZE, SIZE);
   const paper = renderPaperMap();
-  const toMap = (x, z) => [RING + ((x + EXT) / (2 * EXT)) * MAP, RING + ((z + EXT) / (2 * EXT)) * MAP];
+  let cx = 0, cz = 0; // world point at the centre of the map (the plane)
+  const toMap = (x, z) => [SIZE / 2 + (x - cx) * PPM, SIZE / 2 + (z - cz) * PPM];
   const fwd = new THREE.Vector3();
   let mapT = 1;
 
@@ -119,8 +125,10 @@ export function createNav() {
   function drawMap(heading, px, pz) {
     const g = mc, c = SIZE / 2;
     g.clearRect(0, 0, SIZE, SIZE);
+    cx = px; cz = pz;
     g.save(); g.beginPath(); g.arc(c, c, MAP / 2, 0, 7); g.clip();
-    g.drawImage(paper, RING, RING, MAP, MAP);
+    g.fillStyle = 'rgb(150, 176, 172)'; g.fillRect(0, 0, SIZE, SIZE); // open sea beyond the paper
+    g.drawImage(paper, ...toMap(PX0, PZ0));
     g.font = `9px ${TYPE_FONT}`; g.textAlign = 'center';
     for (const s of STRIPS) {
       const [x, y] = toMap(s.x, s.z);
