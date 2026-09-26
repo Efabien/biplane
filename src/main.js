@@ -53,6 +53,8 @@ const menu = document.getElementById('menu'), resumeBtn = document.getElementByI
 const advBtn = menu.querySelector('.plane.adv'), quitAdvBtn = document.getElementById('quit-adv'), resetAdvBtn = document.getElementById('reset-adv');
 const SUB = menu.querySelector('.sub').textContent;
 const settings = { start: 'home', time: 'golden', wind: 'light', sound: 'on' };
+let timeNow = settings.time; // what the sky shows: the menu's choice, or an adventure delivery's (e.g. dusk)
+let adventure = null; // created below, once the menu and planes it drives exist
 const OPTIONS = {
   start: [['home', 'Home strip'], ...STRIPS.map((s, i) => [String(i), s.name])],
   time: Object.entries(TIMES).map(([k, t]) => [k, t.label]),
@@ -61,7 +63,7 @@ const OPTIONS = {
 };
 function applySetting(opt, value) {
   settings[opt] = value;
-  if (opt === 'time') world.setTime(value);
+  if (opt === 'time') { world.setTime(value); timeNow = value; updateLamp(); }
   if (opt === 'wind') Object.assign(wind, { speed: WINDS[value].speed, gust: WINDS[value].gust });
   if (opt === 'sound') sound.setEnabled(value === 'on');
   if (opt === 'start') menu.querySelectorAll('.plane[data-plane]').forEach((b) => { b.querySelector('small').textContent = stripLabel(startFor(b.dataset.plane)); });
@@ -143,7 +145,19 @@ function quitAdventure() {
   resumeBtn.hidden = true;
   refreshMenu();
 }
-const adventure = createAdventure({ scene, world, flight, fly: (start) => takeOff('red', start) });
+// Adventure rewards change the world: the lighthouse lamp (lit at dusk and dawn once repaired) and the pilot's red scarf
+function updateLamp() { landmarks.setLamp(!!adventure?.flags.lamp && (timeNow === 'dusk' || timeNow === 'dawn')); }
+function applyFlags(flags) {
+  updateLamp();
+  if (flags.scarf) for (const p of Object.values(planes)) p.scarf.children[0].material.color.setHex(0xc0473a);
+}
+adventure = createAdventure({
+  scene, world, flight,
+  fly: (start) => takeOff('red', start),
+  setTime: (name) => { timeNow = name ?? settings.time; world.setTime(timeNow); updateLamp(); },
+  onFlags: applyFlags,
+});
+applyFlags(adventure.flags);
 menu.querySelectorAll('.plane[data-plane]').forEach((b) => b.addEventListener('click', () => choose(b.dataset.plane)));
 advBtn.addEventListener('click', startAdventure);
 quitAdvBtn.addEventListener('click', quitAdventure);

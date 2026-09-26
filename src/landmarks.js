@@ -15,14 +15,25 @@ export function buildLandmarks(scene, smoke) {
   const group = (x, y, z, ry = 0) => { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry; scene.add(g); return g; };
   const roofGeo = new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1)]), { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
 
-  // ---- Lighthouse on the east headland, with the keeper's cottage ----
+  // ---- Lighthouse on the east headland, with the keeper's cottage; the lamp can be lit (two sweeping beams) ----
+  const lamp = { beams: new THREE.Group(), room: null };
   {
     const { x, z } = LIGHTHOUSE, gy = groundAt(x, z) - 1;
     const g = group(x, gy, z, 0.4);
     add(new THREE.CylinderGeometry(2.0, 2.8, 22, 18).translate(0, 11, 0), paint(0xffffff, { map: stripeTex(0xc4453a, 0xf6f1e6, 4) }), 0, 0, 0, g);
     add(new THREE.CylinderGeometry(3.0, 3.0, 0.5, 18), dark, 0, 22.2, 0, g);
     add(new THREE.TorusGeometry(3.0, 0.07, 4, 28).rotateX(Math.PI / 2), dark, 0, 23.2, 0, g);
-    add(new THREE.CylinderGeometry(1.6, 1.6, 2.4, 14), paint(0xfff1c4, { emissive: 0x5a4a28 }), 0, 23.7, 0, g);
+    lamp.room = add(new THREE.CylinderGeometry(1.6, 1.6, 2.4, 14), paint(0xfff1c4, { emissive: 0x5a4a28 }), 0, 23.7, 0, g);
+    const beamMat = new THREE.ShaderMaterial({ // bright at the lamp, fading out along the beam (uv.y = 1 at the apex)
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      vertexShader: 'varying float vK; void main() { vK = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'varying float vK; void main() { gl_FragColor = vec4(vec3(1.0, 0.88, 0.62) * pow(vK, 1.8) * 0.4, 1.0); }',
+    });
+    const beamGeo = new THREE.ConeGeometry(9, 160, 16, 1, true).translate(0, -80, 0).rotateZ(Math.PI / 2); // apex at the lamp, opening outward along +x
+    for (const r of [0, Math.PI]) { const b = new THREE.Mesh(beamGeo, beamMat); b.rotation.y = r; lamp.beams.add(b); }
+    lamp.beams.position.set(0, 23.7, 0);
+    lamp.beams.visible = false;
+    g.add(lamp.beams);
     add(new THREE.ConeGeometry(2.0, 2.2, 14), roofRed, 0, 26, 0, g);
     add(new THREE.BoxGeometry(7, 4, 6).translate(0, 2, 0), cream, 7, 0, 4, g);
     const roof = add(roofGeo, roofRed, 7, 4, 4, g);
@@ -161,7 +172,12 @@ export function buildLandmarks(scene, smoke) {
   const chimney = new THREE.Vector3(), smokeAcc = { v: 0 };
 
   return {
+    setLamp(on) {
+      lamp.beams.visible = on;
+      lamp.room.material.emissive.setHex(on ? 0xffd070 : 0x5a4a28);
+    },
     update(dt, t) {
+      if (lamp.beams.visible) lamp.beams.rotation.y += dt * 0.9;
       ruin.position.y = RUIN.y + Math.sin(t * 0.3) * 1.5;
       ruin.rotation.y += dt * 0.01;
       sTrain += SPEED * dt;
