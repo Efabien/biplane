@@ -233,6 +233,32 @@ export function hitObstacle(x, y, z) {
   return false;
 }
 
+// Whitewashed plaster for the house walls: faint mottling, a stone plinth with block seams at the
+// bottom (walls are sunk a metre into the slope, so the plinth meets the ground). Instance colour tints it.
+function plasterTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, 64, 64);
+  const pr = rng(5);
+  g.fillStyle = 'rgba(160, 150, 130, 0.10)';
+  for (let i = 0; i < 40; i++) {
+    const s = 3 + pr() * 9;
+    g.fillRect(pr() * 64, pr() * 44, s, s * (0.5 + pr() * 0.8));
+  }
+  g.fillStyle = '#b3a48c';
+  g.fillRect(0, 47, 64, 17);
+  g.fillStyle = 'rgba(90, 78, 60, 0.5)';
+  g.fillRect(0, 47, 64, 2);
+  g.fillStyle = 'rgba(105, 92, 72, 0.45)';
+  for (let x = 2 + pr() * 6; x < 64; x += 7 + pr() * 8) g.fillRect(x, 50, 1.5, 14);
+  for (let i = 0; i < 12; i++) g.fillRect(pr() * 60, 49 + pr() * 13, 3 + pr() * 5, 1.5);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 // ---- world build ---------------------------------------------------------
 export function buildWorld(scene) {
   const rand = rng(7);
@@ -462,11 +488,26 @@ export function buildWorld(scene) {
   }
   const roofShape = new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1)]);
   const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
-  const wallMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), paint(0xffffff), houses.length);
+  const wallMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), paint(0xffffff, { map: plasterTexture() }), houses.length);
   const roofMesh = new THREE.InstancedMesh(roofGeo, paint(0xffffff), houses.length);
   const roofColors = [0xc0473a, 0x3f7f8c, 0xd98a3d, 0x4d6fa8, 0x9a4f6a];
   const chimneyMesh = new THREE.InstancedMesh(unitBox, paint(0xb8a890), houses.length);
   const chimneys = [];
+  // Doors, windows and roof ridge beams (window panes glow warm at dusk and dawn, set by setTime)
+  const dr = rng(31);
+  const doorColors = [0x6b4a2e, 0x8a4a35, 0x4a5f6e, 0x5a6e55, 0x77502f];
+  const doorMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 1.9, 0.12).translate(0, 0.95, 0), paint(0xffffff), houses.length);
+  const frameMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.74, 0.94, 0.1), paint(0xf6f3e8), houses.length * 7);
+  const paneMat = paint(0x26303c, { emissive: 0x0e1218 });
+  const paneMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.56, 0.76, 0.14), paneMat, houses.length * 7);
+  const ridgeMesh = new THREE.InstancedMesh(unitBox, paint(0x5a4632), houses.length);
+  let nWin = 0;
+  const addWindow = (h, gy, lx, ly, lz, ry, sc = 1) => {
+    const c = Math.cos(h.rot), sn = Math.sin(h.rot);
+    const wx = h.x + lx * c + lz * sn, wz = h.z - lx * sn + lz * c;
+    place(frameMesh, nWin, wx, gy + ly, wz, sc, sc, 1, h.rot + ry);
+    place(paneMesh, nWin++, wx, gy + ly, wz, sc, sc, 1, h.rot + ry);
+  };
   houses.forEach((h, i) => {
     const y = groundAt(h.x, h.z) - 1;
     if (i % 3 !== 2) { // two houses in three have a chimney
@@ -480,10 +521,24 @@ export function buildWorld(scene) {
     place(roofMesh, i, h.x, y + h.hgt + 1, h.z, h.w * 1.15, 2.5 + h.w * 0.25, h.d * 1.1, h.rot);
     wallMesh.setColorAt(i, col.setHex((h.r1 ?? rand()) < 0.5 ? 0xf6efe0 : 0xefe3c8));
     roofMesh.setColorAt(i, col.setHex(roofColors[Math.floor((h.r2 ?? rand()) * roofColors.length)]));
+    // Painted door on one gable end, windows around, a small attic window over the door, a dark ridge beam
+    const gy = y + 1, c = Math.cos(h.rot), sn = Math.sin(h.rot);
+    const fz = dr() < 0.5 ? 1 : -1, dx = (dr() - 0.5) * h.w * 0.35, dz = fz * (h.d / 2 + 0.07);
+    place(doorMesh, i, h.x + dx * c + dz * sn, gy, h.z - dx * sn + dz * c, 1, 1, 1, h.rot);
+    doorMesh.setColorAt(i, col.setHex(doorColors[Math.floor(dr() * doorColors.length)]));
+    addWindow(h, gy, -Math.sign(dx || 1) * h.w * 0.27, 1.6, fz * (h.d / 2 + 0.06), 0);
+    addWindow(h, gy, (dr() - 0.5) * h.w * 0.5, 1.6, -fz * (h.d / 2 + 0.06), 0);
+    for (const sx of [-1, 1]) {
+      const offs = h.d > 8.5 || dr() < 0.4 ? [-h.d * 0.22, h.d * 0.22] : [(dr() - 0.5) * h.d * 0.3];
+      for (const oz of offs) addWindow(h, gy, sx * (h.w / 2 + 0.06), 1.6, oz, Math.PI / 2);
+    }
+    addWindow(h, gy, 0, h.hgt + 0.7, fz * (h.d * 0.55 + 0.05), 0, 0.6);
+    place(ridgeMesh, i, h.x, y + h.hgt + 1 + 2.5 + h.w * 0.25 - 0.06, h.z, 0.16, 0.14, h.d * 1.12, h.rot);
     addObstacle(h.x, h.z, Math.max(h.w, h.d) * 0.6, y + h.hgt + 4.5);
   });
   chimneyMesh.count = chimneys.length;
-  for (const o of [wallMesh, roofMesh, chimneyMesh]) { o.castShadow = o.receiveShadow = true; scene.add(o); }
+  frameMesh.count = paneMesh.count = nWin;
+  for (const o of [wallMesh, roofMesh, chimneyMesh, doorMesh, frameMesh, paneMesh, ridgeMesh]) { o.castShadow = o.receiveShadow = true; scene.add(o); }
 
   // Windmill with turning blades
   const wx = vc.x + 70, wz = vc.z - 95;
@@ -642,6 +697,7 @@ export function buildWorld(scene) {
     hemi.color.setHex(t.hemiSky); hemi.groundColor.setHex(t.hemiGround); hemi.intensity = t.hemiI;
     scene.background.setHex(t.horizon);
     scene.fog.density = t.fog;
+    paneMat.emissive.setHex(name === 'dusk' || name === 'dawn' ? 0xdd8f38 : 0x0e1218); // lit windows in the low light
     LX.crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIR).normalize();
     LY.crossVectors(SUN_DIR, LX);
   };
