@@ -359,6 +359,7 @@ export function waterMaterial(depthTex, grid) {
         vec2 g01 = (vW.xz - vec2(${x0.toFixed(1)}, ${z0.toFixed(1)})) / vec2(${(segx * cell).toFixed(1)}, ${(segz * cell).toFixed(1)});
         vec2 uv = (g01 * vec2(${segx}.0, ${segz}.0) + 0.5) / vec2(${segx + 1}.0, ${segz + 1}.0);
         float depth = (g01.x < 0.0 || g01.y < 0.0 || g01.x > 1.0 || g01.y > 1.0) ? 1.0 : texture2D(uDepth, uv).r;
+        if (depth < 0.002) discard; // dry land: kill the fragment so the plane can't z-fight distant shorelines
 
         vec2 p = vW.xz;
         float t = uTime;

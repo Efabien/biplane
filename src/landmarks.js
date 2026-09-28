@@ -78,7 +78,7 @@ export function buildLandmarks(scene, smoke) {
   // ---- Floating ruin above the lake: rocky underside, meadow top, broken columns, a giant tree ----
   const ruin = group(RUIN.x, RUIN.y, RUIN.z);
   {
-    const rock = new THREE.ConeGeometry(38, 55, 12, 5).rotateX(Math.PI).translate(0, -27.5, 0);
+    const rock = new THREE.ConeGeometry(38, 55, 12, 5, true).rotateX(Math.PI).translate(0, -27.5, 0); // open-ended: the base cap would be coplanar with the meadow top and z-fight it
     const p = rock.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const y = p.getY(i);
