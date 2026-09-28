@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { groundAt, slopeAt, stripAt, WATER, VILLAGE, LIGHTHOUSE, RUIN } from './world.js';
+import { groundAt, slopeAt, stripAt, WATER, VILLAGE, LIGHTHOUSE, RUIN, SEAFORT } from './world.js';
 import { paint, time, atmo } from './style.js';
 
 // Calm life: circling bird flocks, sailboats, grazing sheep, chimney smoke.
@@ -18,6 +18,7 @@ export function createLife(scene, world, smoke) {
     { x: 520, z: 320, alt: 85, r: 130, w: -0.09, n: 7, gull: false },
     { x: RUIN.x, z: RUIN.z, alt: 120, r: 110, w: 0.1, n: 6, gull: false, abs: true },
     { x: LIGHTHOUSE.x, z: LIGHTHOUSE.z, alt: 40, r: 70, w: -0.16, n: 7, gull: true },
+    { x: SEAFORT.x, z: SEAFORT.z, alt: 45, r: 65, w: 0.15, n: 6, gull: true, abs: true },
   ];
   const birdMat = (color) => {
     const m = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });

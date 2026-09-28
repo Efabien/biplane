@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { groundAt, addObstacle, blobCanopy, LIGHTHOUSE, CASTLE, RUIN, RAIL } from './world.js';
+import { groundAt, addObstacle, blobCanopy, LIGHTHOUSE, CASTLE, RUIN, RAIL, SEA_LIGHT, SEAFORT } from './world.js';
 import { paint, stripeTex } from './style.js';
 
 // Landmarks to fly to: coastal lighthouse, ridge castle, floating ruin over the lake, railway viaduct with a steam train.
@@ -15,31 +15,86 @@ export function buildLandmarks(scene, smoke) {
   const group = (x, y, z, ry = 0) => { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry; scene.add(g); return g; };
   const roofGeo = new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1)]), { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
 
-  // ---- Lighthouse on the east headland, with the keeper's cottage; the lamp can be lit (two sweeping beams) ----
-  const lamp = { beams: new THREE.Group(), room: null };
+  // Lamp rooms with two sweeping beams, shared by both lighthouses; setLamp lights them together
+  const beamMat = new THREE.ShaderMaterial({ // bright at the lamp, fading out along the beam (uv.y = 1 at the apex)
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    vertexShader: 'varying float vK; void main() { vK = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'varying float vK; void main() { gl_FragColor = vec4(vec3(1.0, 0.88, 0.62) * pow(vK, 1.8) * 0.4, 1.0); }',
+  });
+  const beamGeo = new THREE.ConeGeometry(9, 160, 16, 1, true).translate(0, -80, 0).rotateZ(Math.PI / 2); // apex at the lamp, opening outward along +x
+  const lamp = { beams: new THREE.Group(), room: null }, seaLamp = { beams: new THREE.Group(), room: null };
+  const lampRoom = (l, g, y) => {
+    l.room = add(new THREE.CylinderGeometry(1.6, 1.6, 2.4, 14), paint(0xfff1c4, { emissive: 0x5a4a28 }), 0, y, 0, g);
+    for (const r of [0, Math.PI]) { const b = new THREE.Mesh(beamGeo, beamMat); b.rotation.y = r; l.beams.add(b); }
+    l.beams.position.set(0, y, 0);
+    l.beams.visible = false;
+    g.add(l.beams);
+  };
+
+  // ---- Lighthouse on the east headland, with the keeper's cottage ----
   {
     const { x, z } = LIGHTHOUSE, gy = groundAt(x, z) - 1;
     const g = group(x, gy, z, 0.4);
     add(new THREE.CylinderGeometry(2.0, 2.8, 22, 18).translate(0, 11, 0), paint(0xffffff, { map: stripeTex(0xc4453a, 0xf6f1e6, 4) }), 0, 0, 0, g);
     add(new THREE.CylinderGeometry(3.0, 3.0, 0.5, 18), dark, 0, 22.2, 0, g);
     add(new THREE.TorusGeometry(3.0, 0.07, 4, 28).rotateX(Math.PI / 2), dark, 0, 23.2, 0, g);
-    lamp.room = add(new THREE.CylinderGeometry(1.6, 1.6, 2.4, 14), paint(0xfff1c4, { emissive: 0x5a4a28 }), 0, 23.7, 0, g);
-    const beamMat = new THREE.ShaderMaterial({ // bright at the lamp, fading out along the beam (uv.y = 1 at the apex)
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-      vertexShader: 'varying float vK; void main() { vK = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'varying float vK; void main() { gl_FragColor = vec4(vec3(1.0, 0.88, 0.62) * pow(vK, 1.8) * 0.4, 1.0); }',
-    });
-    const beamGeo = new THREE.ConeGeometry(9, 160, 16, 1, true).translate(0, -80, 0).rotateZ(Math.PI / 2); // apex at the lamp, opening outward along +x
-    for (const r of [0, Math.PI]) { const b = new THREE.Mesh(beamGeo, beamMat); b.rotation.y = r; lamp.beams.add(b); }
-    lamp.beams.position.set(0, 23.7, 0);
-    lamp.beams.visible = false;
-    g.add(lamp.beams);
+    lampRoom(lamp, g, 23.7);
     add(new THREE.ConeGeometry(2.0, 2.2, 14), roofRed, 0, 26, 0, g);
     add(new THREE.BoxGeometry(7, 4, 6).translate(0, 2, 0), cream, 7, 0, 4, g);
     const roof = add(roofGeo, roofRed, 7, 4, 4, g);
     roof.scale.set(7.8, 2.6, 6.6);
     addObstacle(x, z, 3.5, gy + 28);
     addObstacle(x + 7, z + 4, 5, gy + 7);
+  }
+
+  // ---- Offshore lighthouse on the shoal south of the sea stacks: a granite caisson rising from open water ----
+  {
+    const { x, z } = SEA_LIGHT;
+    const g = group(x, 0, z, 0.9);
+    const granite = paint(0x847e72, { flatShading: true });
+    add(new THREE.CylinderGeometry(6.5, 9, 30, 16).translate(0, -9, 0), granite, 0, 0, 0, g); // caisson, down into the sea
+    add(new THREE.CylinderGeometry(7.4, 7.4, 1, 16), granite, 0, 6, 0, g); // deck
+    add(new THREE.CylinderGeometry(1.7, 2.5, 18, 14).translate(0, 9, 0), paint(0xffffff, { map: stripeTex(0x2e3138, 0xf6f1e6, 3) }), 0, 6.5, 0, g);
+    add(new THREE.CylinderGeometry(3.0, 3.0, 0.5, 14), dark, 0, 24.7, 0, g);
+    add(new THREE.TorusGeometry(3.0, 0.07, 4, 28).rotateX(Math.PI / 2), dark, 0, 25.7, 0, g);
+    lampRoom(seaLamp, g, 26.2);
+    add(new THREE.ConeGeometry(2.0, 2.2, 14), roofRed, 0, 28.5, 0, g);
+    const rockGeo = new THREE.IcosahedronGeometry(1, 0); // the shoal, awash around the base
+    for (const [rx, rz, s] of [[11, 4, 3.4], [-8, 8, 2.6], [2, -12, 2.9], [-12, -5, 2.2]])
+      add(rockGeo, granite, rx, -0.6, rz, g).scale.set(s, s * 0.55, s);
+    addObstacle(x, z, 9.5, 7);
+    addObstacle(x, z, 3.5, 31);
+  }
+
+  // ---- Round sea fort guarding the strait off the volcanic island's west coast ----
+  {
+    const { x, z } = SEAFORT;
+    const g = group(x, 0, z, 0.7);
+    const granite = paint(0x9a9188);
+    add(new THREE.CylinderGeometry(15, 19, 26, 18).translate(0, -10, 0), paint(0x77705f, { flatShading: true }), 0, 0, 0, g); // rock footing, awash
+    add(new THREE.CylinderGeometry(13, 14, 9, 18).translate(0, 4.5, 0), granite, 0, 3, 0, g); // main drum
+    add(new THREE.CylinderGeometry(13.8, 13.8, 1.2, 18), granite, 0, 12, 0, g); // cornice
+    add(new THREE.CylinderGeometry(12.8, 12.8, 0.8, 18), stone, 0, 12.6, 0, g); // deck
+    const port = new THREE.BoxGeometry(1.6, 1.8, 1.2); // ring of gun ports
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      add(port, dark, Math.sin(a) * 13.5, 8, Math.cos(a) * 13.5, g).rotation.y = a;
+    }
+    const cren = new THREE.BoxGeometry(1.6, 1.2, 0.8);
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2;
+      add(cren, granite, Math.sin(a) * 13.4, 13.2, Math.cos(a) * 13.4, g).rotation.y = a;
+    }
+    add(new THREE.CylinderGeometry(5, 5.5, 4, 12).translate(0, 2, 0), stone, 0, 13, 0, g); // barracks roundhouse
+    add(new THREE.ConeGeometry(5.8, 3, 12), roofRed, 0, 18.5, 0, g);
+    add(new THREE.CylinderGeometry(0.1, 0.1, 6, 6), dark, 0, 21.5, 0, g);
+    const flag = new THREE.BufferGeometry();
+    flag.setAttribute('position', new THREE.Float32BufferAttribute([0, 24.3, 0, 0, 22.7, 0, 2.6, 23.5, 0], 3));
+    flag.computeVertexNormals();
+    add(flag, paint(0xa33a2a, { side: THREE.DoubleSide }), 0, 0, 0, g);
+    addObstacle(x, z, 16, 14);
+    addObstacle(x, z, 6, 20);
+    addObstacle(x, z, 1, 25);
   }
 
   // ---- Castle on the south-east ridge: keep, four round towers, curtain walls ----
@@ -173,11 +228,13 @@ export function buildLandmarks(scene, smoke) {
 
   return {
     setLamp(on) {
-      lamp.beams.visible = on;
-      lamp.room.material.emissive.setHex(on ? 0xffd070 : 0x5a4a28);
+      for (const l of [lamp, seaLamp]) {
+        l.beams.visible = on;
+        l.room.material.emissive.setHex(on ? 0xffd070 : 0x5a4a28);
+      }
     },
     update(dt, t) {
-      if (lamp.beams.visible) lamp.beams.rotation.y += dt * 0.9;
+      if (lamp.beams.visible) { lamp.beams.rotation.y += dt * 0.9; seaLamp.beams.rotation.y -= dt * 0.7; }
       ruin.position.y = RUIN.y + Math.sin(t * 0.3) * 1.5;
       ruin.rotation.y += dt * 0.01;
       sTrain += SPEED * dt;

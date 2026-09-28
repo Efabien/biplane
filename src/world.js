@@ -3,8 +3,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SUN_DIR, NCS, time, drift, wind, applyTime, cloudUniform, paint, stripeTex, skyMaterial, cloudMaterial, cloudSpriteMaterial, waterMaterial } from './style.js';
 
 export const HALF = 2000, WATER = 0, RUNWAY_H = 15, RW_L = 600, RW_W = 30;
-// World grid: the home island (radius HALF, centred on the origin) plus a volcanic island to the east
-export const X0 = -HALF, Z0 = -HALF, SEGX = 1024, SEGZ = 512, CELL = (HALF * 2) / SEGZ, WX = SEGX * CELL, WZ = SEGZ * CELL;
+// World grid: the home island (radius HALF, centred on the origin), a volcanic island to the east,
+// then a sea-stack crossing and a coral atoll in the far east
+export const X0 = -HALF, Z0 = -HALF, SEGX = 1280, SEGZ = 512, CELL = (HALF * 2) / SEGZ, WX = SEGX * CELL, WZ = SEGZ * CELL;
 export const GRID = { x0: X0, z0: Z0, cell: CELL, segx: SEGX, segz: SEGZ };
 export const GLIDE = (3 * Math.PI) / 180; // standard 3° approach path
 
@@ -20,6 +21,8 @@ export const STRIPS = [
   { name: 'Caldera', x: 4450, z: -350, heading: -1.22, len: 260, w: 20, h: 215, aim: 40, surface: 'grass', takeoff: -1 },
   // on a grassy promontory that ends in a sea cliff: land inland (heading), take off over the edge
   { name: 'Headland', x: 3600, z: 1480, heading: 0, len: 300, w: 22, h: 45, aim: 60, surface: 'grass', blend: 40, headland: true, takeoff: -1 },
+  // a built-up sandbar along the atoll ring's south-east arc: both approaches over water
+  { name: 'Atoll sandbar', x: 7423, z: 854, heading: 2.79, len: 320, w: 20, h: 2, aim: 60, surface: 'sand', blend: 60 },
 ];
 for (const st of STRIPS) { st.fx = -Math.sin(st.heading); st.fz = -Math.cos(st.heading); st.slope ??= 0; st.blend ??= 160; st.takeoff ??= 1; }
 const along = (st, x, z) => (x - st.x) * st.fx + (z - st.z) * st.fz;
@@ -69,6 +72,22 @@ export const RUIN = { x: 750, z: -650, y: 150 }; // floating island above the la
 // Volcanic island: crater floor + rim, breached toward the west-south-west (bx, bz points out through the gap)
 export const ISLE = { x: 4100, z: 100, rx: 1750, rz: 1650 };
 export const VOLCANO = { x: 4450, z: -350, floor: 215, floorR: 330, rimR: 470, rim: 340, foot: 1300, bx: -0.94, bz: 0.34 };
+// Coral atoll: a reef ring of linked motu around a shallow lagoon; (bx, bz) points out through the pass
+export const ATOLL = { x: 7000, z: 700, R: 450, bx: -0.707, bz: -0.707 };
+// Offshore works, both standing in open water: a lighthouse on the shoal south of the sea stacks,
+// and a round sea fort guarding the strait off the volcanic island's west coast
+export const SEA_LIGHT = { x: 6150, z: 1500 };
+export const SEAFORT = { x: 2500, z: 800 };
+// Sea stacks: rock pillars on the crossing between the volcano coast and the atoll (own rng: the rest of the world stays put)
+export const STACKS = [];
+{
+  const sr = rng(23);
+  for (let t = 0; t < 4000 && STACKS.length < 26; t++) {
+    const x = 5750 + sr() * 650, z = 150 + sr() * 1200;
+    if (STACKS.some((s) => (s.x - x) ** 2 + (s.z - z) ** 2 < 130 * 130)) continue;
+    STACKS.push({ x, z, r: 16 + sr() * 26, h: 28 + sr() * 45 });
+  }
+}
 // Railway: straight line across a valley at a fixed deck height; tunnels at both ends (portals computed below)
 export const RAIL = { cx: -650, cz: 1175, dir: (40 * Math.PI) / 180, L: 350, deck: 80 };
 RAIL.fx = Math.sin(RAIL.dir); RAIL.fz = Math.cos(RAIL.dir);
@@ -79,6 +98,7 @@ export const railV = (x, z) => -(x - RAIL.cx) * RAIL.fz + (z - RAIL.cz) * RAIL.f
 // Rolling hills, a mountain ring, a lake, island falloff into the sea, flattened runway.
 function homeIsland(x, z) {
   const r = Math.hypot(x, z) / HALF;
+  if (r >= 1) return -35; // the falloff term reaches exactly -35 at r = 1, so this is exact
   let h = (fbm(x * 0.0011 + 3.1, z * 0.0011 - 1.7) - 0.42) * 140 + 14;
   const ridge = fbm(x * 0.003 + 11, z * 0.003 + 5);
   h += smooth(0.5, 0.75, r) * (1 - smooth(0.8, 0.92, r)) * ridge * ridge * 750;
@@ -109,8 +129,36 @@ function volcanicIsland(x, z) {
   }
   return h;
 }
+// Coral atoll: sandy motu where the ring noise runs high, awash reef where it runs low; the ring stays
+// submerged across the pass so the lagoon opens to the sea. The lagoon floor stays shallow (bright water).
+function atoll(x, z) {
+  const A = ATOLL, d = Math.hypot(x - A.x, z - A.z);
+  if (d > A.R + 320) return -35;
+  const h = d < A.R ? -1.5 - 4 * (1 - smooth(A.R - 330, A.R - 110, d)) : -4 - 31 * smooth(0, 300, d - A.R);
+  const band = 1 - smooth(0, 155, Math.abs(d - A.R));
+  const n = fbm(x * 0.0045 + 70, z * 0.0045 - 40);
+  // -35 base so the ring vanishes under the lagoon/shelf floor off the band (max() below picks the floor)
+  let ring = -35 + band * (33.5 + 10.5 * smooth(0.4, 0.72, n) + (noise(x * 0.05 + 80, z * 0.05) - 0.5) * 1.2);
+  if ((x - A.x) * A.bx + (z - A.z) * A.bz > 0) {
+    const lat = Math.abs(-(x - A.x) * A.bz + (z - A.z) * A.bx);
+    ring = Math.min(ring, -1.5 + Math.max(0, ring + 1.5) * smooth(90, 200, lat));
+  }
+  return Math.max(h, ring);
+}
+// Sea stacks: steep pillars, rock-sided by the slope colour rule, grass-capped where the top is wide enough
+function seaStacks(x, z) {
+  if (x < 5600 || x > 6550 || z < -50 || z > 1550) return -35;
+  let h = -35;
+  for (const s of STACKS) {
+    let d = Math.hypot(x - s.x, z - s.z);
+    if (d > s.r * 2.2) continue;
+    d *= 1 + (noise(x * 0.06 + 60, z * 0.06 + 25) - 0.5) * 0.4; // ragged outline
+    h = Math.max(h, -35 + (s.h + 35) * (1 - smooth(s.r * 0.45, s.r * 2, d)));
+  }
+  return h;
+}
 function baseHeight(x, z) {
-  let h = Math.max(homeIsland(x, z), volcanicIsland(x, z));
+  let h = Math.max(homeIsland(x, z), volcanicIsland(x, z), atoll(x, z), seaStacks(x, z));
   for (const st of STRIPS) {
     const dv = Math.max(Math.abs(across(st, x, z)) - st.w / 2 - 15, 0), du = Math.max(Math.abs(along(st, x, z)) - st.len / 2 - 30, 0);
     h += (st.h + st.slope * along(st, x, z) - h) * (1 - smooth(0, st.blend, Math.hypot(du, dv)));
@@ -513,6 +561,17 @@ export function buildWorld(scene) {
     if (slopeAt(x, z) > 0.7) continue;
     addTree(x, z, 0.9 + rand() * 0.8, h > 260 || rand() < 0.06);
   }
+  // Atoll: a light broadleaf scatter on the grassy motu; green tufts cap the flatter sea stacks
+  const ar = rng(19);
+  for (let t = 0, n = 0; t < 4000 && n < 60; t++) {
+    const a = ar() * Math.PI * 2, d = ATOLL.R + (ar() * 2 - 1) * 110;
+    const x = ATOLL.x + Math.cos(a) * d, z = ATOLL.z + Math.sin(a) * d;
+    if (groundAt(x, z) < 3.5) continue;
+    if (STRIPS.some((st) => Math.abs(across(st, x, z)) < 90 && Math.abs(along(st, x, z)) < st.len / 2 + 450)) continue;
+    addTree(x, z, 0.55 + ar() * 0.35, false);
+    n++;
+  }
+  for (const s of STACKS) if (s.h < 48 && ar() < 0.6) addTree(s.x, s.z, 0.6 + ar() * 0.3, false);
   for (const chunk of chunks.values())
     for (const [kind, list] of Object.entries(chunk)) {
       if (!list.length) continue;
