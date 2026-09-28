@@ -173,6 +173,7 @@ for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => sound.un
 const input = new Input();
 const hud = new Hud(document.getElementById('hud'));
 const help = document.getElementById('help');
+const perfEl = document.getElementById('perf');
 
 // Antialiasing: MSAA render target (geometry edges) + SMAA (thin wires, foliage)
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
@@ -256,10 +257,24 @@ function updateCamera(dt) {
   camera.lookAt(_l);
 }
 
+// Perf readout (P, dev only): JS time of frame() excluding the rAF wait, frame interval, and draw stats for the
+// whole frame; info is reset once per frame because each composer pass would otherwise reset it (hiding the shadow pass)
+renderer.info.autoReset = false;
+let pfCpu = 0, pfRaw = 0, pfN = 0;
+function perfReadout(raw, cpu) {
+  pfCpu += cpu; pfRaw += raw; pfN++;
+  if (pfRaw < 0.5) return;
+  const r = renderer.info.render;
+  perfEl.textContent = `CPU   ${(pfCpu / pfN).toFixed(2)} ms\nFRAME ${(pfRaw / pfN * 1000).toFixed(1)} ms · ${Math.round(pfN / pfRaw)} fps\nCALLS ${r.calls}\nTRIS  ${(r.triangles / 1e6).toFixed(2)} M`;
+  pfCpu = pfRaw = pfN = 0;
+}
+
 applyQuality();
 const clock = new THREE.Clock();
 function frame() {
+  const t0 = perfEl.hidden ? 0 : performance.now();
   const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
+  renderer.info.reset();
   if (!menu.hidden) { if (input.consume('Digit1')) choose('red'); else if (input.consume('Digit2')) choose('blue'); else if (input.consume('Digit3')) startAdventure(); }
   if (input.consume('Escape') && started) { if (paused) closeMenu(); else openMenu(); }
   if (input.consume('KeyR') && !adventure.holdsPlane) { flight.reset(); snap = true; }
@@ -267,6 +282,7 @@ function frame() {
   if (input.consume('KeyC')) { cockpit = !cockpit; plane.pilot.visible = !cockpit; }
   if (input.consume('KeyH')) help.hidden = !help.hidden;
   if (input.consume('KeyM')) nav.toggleMap();
+  if (input.consume('KeyP')) { perfEl.hidden = !perfEl.hidden; perfEl.textContent = 'measuring…'; pfCpu = pfRaw = pfN = 0; }
   if (input.consume('KeyG')) {
     if (auto) { auto = false; level = 0; } else if (level < 2) level++; else { auto = true; ceiling = 2; }
     applyQuality();
@@ -283,12 +299,13 @@ function frame() {
   updateCamera(dt);
   pointScale.value = renderer.getDrawingBufferSize(_size).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
   world.update(live || !started ? dt : 0, camera, flight.pos);
-  if (live || !started) { landmarks.update(dt, time.value); life.update(dt); }
+  if (live || !started) { landmarks.update(dt, time.value, camera.position); life.update(dt, camera.position); }
   sound.update(flight, !live);
   nav.update(dt, flight, adventure.target);
   cover.update(camera.position);
   hud.update(dt, flight, world, adventure.target, `WIND ${wind.speed ? `${wind.from}° ${Math.round(wind.now)} m/s` : 'CALM'}\nGFX ${auto ? 'auto · ' : ''}${QUALITY[level].name}${fps ? ` · ${fps} fps` : ''}`);
   composer.render();
+  if (t0) perfReadout(raw, performance.now() - t0);
   monitor(raw);
   input.endFrame();
   requestAnimationFrame(frame);

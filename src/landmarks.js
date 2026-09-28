@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { groundAt, addObstacle, blobCanopy, LIGHTHOUSE, CASTLE, RUIN, RAIL, SEA_LIGHT, SEAFORT } from './world.js';
 import { paint, stripeTex } from './style.js';
+import { AMBIENT_FAR2 } from './smoke.js';
 
 // Landmarks to fly to: coastal lighthouse, ridge castle, floating ruin over the lake, railway viaduct with a steam train.
 export function buildLandmarks(scene, smoke) {
@@ -233,7 +234,7 @@ export function buildLandmarks(scene, smoke) {
         l.room.material.emissive.setHex(on ? 0xffd070 : 0x5a4a28);
       }
     },
-    update(dt, t) {
+    update(dt, t, cam) {
       if (lamp.beams.visible) { lamp.beams.rotation.y += dt * 0.9; seaLamp.beams.rotation.y -= dt * 0.7; }
       ruin.position.y = RUIN.y + Math.sin(t * 0.3) * 1.5;
       ruin.rotation.y += dt * 0.01;
@@ -241,10 +242,11 @@ export function buildLandmarks(scene, smoke) {
       if (sTrain > END) sTrain = START;
       cars.forEach((c, i) => c.position.set(0, deck + 0.6, sTrain - i * 9.6 - (i ? 1 : 0)));
       if (sTrain > s1 && sTrain < s2 + 4) { // puffs only outside the tunnels
-        smokeAcc.v += 6 * dt;
-        for (; smokeAcc.v >= 1; smokeAcc.v--) {
-          loco.localToWorld(chimney.set(0, 4.2, 2.6));
-          smoke.spawn(chimney.x, chimney.y, chimney.z, (Math.random() - 0.5) * 0.6, 2.5, (Math.random() - 0.5) * 0.6, 3.5, 1.2, 0.35, 1.2);
+        loco.localToWorld(chimney.set(0, 4.2, 2.6));
+        if ((chimney.x - cam.x) ** 2 + (chimney.z - cam.z) ** 2 < AMBIENT_FAR2) {
+          smokeAcc.v += 6 * dt;
+          for (; smokeAcc.v >= 1; smokeAcc.v--)
+            smoke.spawn(chimney.x, chimney.y, chimney.z, (Math.random() - 0.5) * 0.6, 2.5, (Math.random() - 0.5) * 0.6, 3.5, 1.2, 0.35, 1.2);
         }
       }
     },

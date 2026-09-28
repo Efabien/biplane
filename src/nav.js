@@ -70,7 +70,10 @@ export function createNav() {
   const compassEl = document.getElementById('compass'), mapEl = document.getElementById('minimap');
   const CW = 380, CH = 50;
   const cc = setupCanvas(compassEl, CW, CH), mc = setupCanvas(mapEl, SIZE, SIZE);
-  const paper = renderPaperMap();
+  // The paper map (~70 k height samples) is rendered off the startup path: idle after first frame, or on demand
+  let paper = null;
+  const paperReady = () => (paper ??= renderPaperMap());
+  (window.requestIdleCallback ?? ((f) => setTimeout(f, 0)))(paperReady);
   let cx = 0, cz = 0; // world point at the centre of the map (the plane)
   const toMap = (x, z) => [SIZE / 2 + (x - cx) * PPM, SIZE / 2 + (z - cz) * PPM];
   const fwd = new THREE.Vector3();
@@ -139,7 +142,7 @@ export function createNav() {
     cx = px; cz = pz;
     g.save(); g.beginPath(); g.arc(c, c, MAP / 2, 0, 7); g.clip();
     g.fillStyle = 'rgb(150, 176, 172)'; g.fillRect(0, 0, SIZE, SIZE); // open sea beyond the paper
-    g.drawImage(paper, ...toMap(PX0, PZ0));
+    g.drawImage(paperReady(), ...toMap(PX0, PZ0));
     g.font = `9px ${TYPE_FONT}`; g.textAlign = 'center';
     for (const s of STRIPS) {
       const [x, y] = toMap(s.x, s.z);

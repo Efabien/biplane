@@ -6,6 +6,9 @@ import { pointScale, atmo, wind } from './style.js';
 const N = 900;
 const EXHAUSTS = [new THREE.Vector3(-0.58, -0.28, -1.0), new THREE.Vector3(0.58, -0.28, -1.0)];
 const COWL = new THREE.Vector3(0, 0.3, -2.2);
+// Ambient emitters (chimneys, train) only puff within this horizontal range of the camera, so far-off
+// smoke doesn't churn the ring and evict the plane's exhaust trail
+export const AMBIENT_FAR2 = 700 * 700;
 
 export function createSmoke(scene) {
   const pos = new Float32Array(N * 3), vel = new Float32Array(N * 3);

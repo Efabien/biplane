@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { groundAt, slopeAt, stripAt, WATER, VILLAGE, LIGHTHOUSE, RUIN, SEAFORT } from './world.js';
 import { paint, time, atmo } from './style.js';
+import { AMBIENT_FAR2 } from './smoke.js';
 
 // Calm life: circling bird flocks, sailboats, grazing sheep, chimney smoke.
 export function createLife(scene, world, smoke) {
@@ -84,7 +85,7 @@ export function createLife(scene, world, smoke) {
   const chimneys = world.chimneys.map((c) => ({ ...c, acc: Math.random() }));
 
   return {
-    update(dt) {
+    update(dt, cam) {
       const t = time.value;
       for (const { mesh, list } of birds) {
         let i = 0;
@@ -125,6 +126,7 @@ export function createLife(scene, world, smoke) {
       bodies.instanceMatrix.needsUpdate = heads.instanceMatrix.needsUpdate = true;
 
       for (const c of chimneys) {
+        if ((c.x - cam.x) ** 2 + (c.z - cam.z) ** 2 > AMBIENT_FAR2) continue; // acc stays < 1: no burst on return
         c.acc += 1.1 * dt;
         for (; c.acc >= 1; c.acc--)
           smoke.spawn(c.x + (Math.random() - 0.5) * 0.3, c.y, c.z + (Math.random() - 0.5) * 0.3, 0, 0.8, 0, 6 + Math.random() * 2, 1.4 + Math.random() * 0.4, 0.12, 1.1);

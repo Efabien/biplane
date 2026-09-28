@@ -56,7 +56,7 @@ export function updateWind(t) {
 export const time = { value: 0 };   // shared shader clock (wind, water, clouds)
 export const drift = { value: 0 };  // total cloud drift along +x (metres)
 export const pointScale = { value: 600 }; // pixels per metre at 1 m distance (point sprites)
-export const NCS = 16;              // nearest clouds that cast shadows
+export const NCS = 8;               // nearest clouds that cast shadows
 export const cloudUniform = { value: Array.from({ length: NCS }, () => new THREE.Vector4()) }; // x, z, radius, base
 
 const lin = (hex) => { const c = new THREE.Color(hex); return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`; };
@@ -89,7 +89,9 @@ float cloudShadow(vec3 p) {
     if (c.z <= 0.0) continue;
     vec2 q = p.xz + SUN_DIR.xz * ((c.w - p.y) / SUN_DIR.y) - c.xy;
     q.y *= 1.4;
-    float r = length(q) + (vnoise(q * 0.04 + c.xy) - 0.5) * c.z * 0.5;
+    float r = length(q);
+    if (r > c.z * 1.2) continue; // the noise moves r by at most ±0.25·c.z; nothing shows past 0.95·c.z
+    r += (vnoise(q * 0.04 + c.xy) - 0.5) * c.z * 0.5;
     s = max(s, 1.0 - smoothstep(c.z * 0.5, c.z * 0.95, r));
   }
   return s;
@@ -225,7 +227,7 @@ export function skyMaterial() {
 // Drift happens in the shader (per-cloud wrap across the map: wrap = { x0, span }), so instance matrices stay static.
 export function cloudMaterial(wrap) {
   const mat = new THREE.ShaderMaterial({
-    fog: true, transparent: true, depthWrite: false, // puffs are sorted back-to-front each frame (world.js)
+    fog: true, transparent: true, depthWrite: false, // puffs are kept sorted back-to-front (world.js)
     uniforms: THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
     vertexShader: /* glsl */ `
       uniform float uTime;

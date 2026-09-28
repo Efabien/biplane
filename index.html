@@ -25,6 +25,9 @@
             font: 12px/1.55 var(--type); color: var(--ink); border-radius: 4px; border: 1px solid rgba(107, 74, 42, .5);
             background: radial-gradient(ellipse at 30% 20%, var(--paper), var(--paper-2)); box-shadow: 0 3px 10px rgba(0, 0, 0, .25); }
     #help b { color: var(--red); font-weight: normal; }
+    #perf { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); margin: 0; padding: 6px 10px; pointer-events: none;
+            font: 12px/1.45 var(--type); color: var(--ink); border-radius: 4px; border: 1px solid rgba(107, 74, 42, .5);
+            background: radial-gradient(ellipse at 30% 20%, var(--paper), var(--paper-2)); box-shadow: 0 3px 10px rgba(0, 0, 0, .25); }
 
     /* Start / pause menu: leather folio with brass-edged cards */
     #menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(30, 24, 18, .35); }
@@ -97,6 +100,7 @@
 <b>R</b>       reset           <b>T</b>      landing practice
 <b>G</b>       graphics        <b>M</b>      map
 <b>Esc</b>     pause menu      <b>H</b>      hide this card</p>
+  <pre id="perf" hidden></pre>
   <div id="story" hidden>
     <div class="letter"><p class="kicker"></p><h2></h2><p class="body"></p><p class="stamp" hidden></p><button></button></div>
   </div>

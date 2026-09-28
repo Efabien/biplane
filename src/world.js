@@ -291,51 +291,79 @@ export function buildWorld(scene) {
   sky.renderOrder = -1;
   scene.add(sky);
 
-  // Terrain with height/slope vertex colors
-  const tGeo = new THREE.PlaneGeometry(WX, WZ, SEGX, SEGZ).rotateX(-Math.PI / 2).translate(X0 + WX / 2, 0, Z0 + WZ / 2);
-  const pos = tGeo.attributes.position;
-  const colors = new Float32Array(pos.count * 3);
+  // Terrain with height/slope vertex colors. Vertices are exactly the H grid nodes, so positions come straight
+  // from H (no staging PlaneGeometry) and slope collapses to grid central differences (±1 node ≈ the old ±4 m
+  // probes; borders one-sided, all open sea). Normals still come from computeVertexNormals over the full grid
+  // (seamless chunk edges) with PlaneGeometry's triangulation, so shading and groundAt's diagonal are unchanged.
+  const NV = (SEGX + 1) * (SEGZ + 1), RS = SEGX + 1;
+  const positions = new Float32Array(NV * 3), colors = new Float32Array(NV * 3);
+  const fullIdx = new Uint32Array(SEGX * SEGZ * 6);
+  for (let j = 0, n = 0; j < SEGZ; j++)
+    for (let i = 0; i < SEGX; i++) {
+      const a = j * RS + i, b = a + RS;
+      fullIdx[n++] = a; fullIdx[n++] = b; fullIdx[n++] = a + 1; fullIdx[n++] = b; fullIdx[n++] = b + 1; fullIdx[n++] = a + 1;
+    }
   const sand = new THREE.Color(0xe2cf9e), grassA = new THREE.Color(0xa8d060), grassB = new THREE.Color(0x5c9a46);
   const rock = new THREE.Color(0x8e8878), snow = new THREE.Color(0xf4f6f8), fern = new THREE.Color(0x7cc653), jungle = new THREE.Color(0x3a8a3c);
-  for (let v = 0; v < pos.count; v++) {
-    const x = pos.getX(v), z = pos.getZ(v), h = groundAt(x, z), s = slopeAt(x, z);
-    pos.setY(v, h);
-    const n = fbm(x * 0.01, z * 0.01), tropic = x > HALF && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) < 1.05;
-    if (h < 2.5) col.copy(sand);
-    else if (tropic) col.copy(s > 0.9 ? rock : fern).lerp(jungle, s > 0.9 ? 0.35 : smooth(0.3, 0.7, n + h / 500)); // lush volcanic island, rock only on cliffs
-    else if (h > 250 + n * 60) col.copy(snow);
-    else if (h > 140 + n * 40 || s > 0.75) col.copy(rock);
-    else col.copy(grassA).lerp(grassB, smooth(0.35, 0.65, n));
-    col.toArray(colors, v * 3);
-  }
-  tGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  tGeo.computeVertexNormals();
+  for (let j = 0, v = 0; j <= SEGZ; j++)
+    for (let i = 0; i <= SEGX; i++, v++) {
+      const x = X0 + i * CELL, z = Z0 + j * CELL, h = H[v];
+      positions[v * 3] = x; positions[v * 3 + 1] = h; positions[v * 3 + 2] = z;
+      const s = Math.hypot(H[v + (i < SEGX ? 1 : 0)] - H[v - (i > 0 ? 1 : 0)], H[v + (j < SEGZ ? RS : 0)] - H[v - (j > 0 ? RS : 0)]) / (2 * CELL);
+      const n = fbm(x * 0.01, z * 0.01), tropic = x > HALF && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) < 1.05;
+      if (h < 2.5) col.copy(sand);
+      else if (tropic) col.copy(s > 0.9 ? rock : fern).lerp(jungle, s > 0.9 ? 0.35 : smooth(0.3, 0.7, n + h / 500)); // lush volcanic island, rock only on cliffs
+      else if (h > 250 + n * 60) col.copy(snow);
+      else if (h > 140 + n * 40 || s > 0.75) col.copy(rock);
+      else col.copy(grassA).lerp(grassB, smooth(0.35, 0.65, n));
+      col.toArray(colors, v * 3);
+    }
+  const staging = new THREE.BufferGeometry();
+  staging.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  staging.setIndex(new THREE.BufferAttribute(fullIdx, 1));
+  staging.computeVertexNormals();
+  const normals = staging.attributes.normal.array;
 
   // Split into CHUNK×CHUNK-cell meshes so the main and shadow passes can frustum-cull what's out of view.
-  // Normals come from the full grid (seamless edges); each chunk keeps PlaneGeometry's diagonals (matches groundAt).
-  const CHUNK = 64, nrm = tGeo.attributes.normal, terrainMat = paint(0xffffff, { vertexColors: true }, { mottle: true });
-  const cIndex = [];
+  // All chunks share two index buffers: full res (PlaneGeometry's diagonals, matches groundAt) and a half-res
+  // LOD for distant chunks. In the LOD, border cells stay full res and fan into the coarse interior, so shared
+  // edges are always full res: no T-junction cracks at LOD boundaries or between chunks.
+  const CHUNK = 64, CR = CHUNK + 1, terrainMat = paint(0xffffff, { vertexColors: true }, { mottle: true });
+  const cFull = [], cHalf = [], N = (i, j) => j * CR + i;
   for (let j = 0; j < CHUNK; j++)
-    for (let i = 0; i < CHUNK; i++) {
-      const a = j * (CHUNK + 1) + i, b = a + CHUNK + 1;
-      cIndex.push(a, b, a + 1, b, b + 1, a + 1);
+    for (let i = 0; i < CHUNK; i++) { const a = N(i, j), b = a + CR; cFull.push(a, b, a + 1, b, b + 1, a + 1); }
+  for (let j = 0; j < CHUNK; j += 2)
+    for (let i = 0; i < CHUNK; i += 2) {
+      const A = N(i, j), B = N(i + 2, j), C = N(i, j + 2), D = N(i + 2, j + 2);
+      const MT = N(i + 1, j), MB = N(i + 1, j + 2), ML = N(i, j + 1), MR = N(i + 2, j + 1);
+      const T = j === 0, Bo = j === CHUNK - 2, L = i === 0, R = i === CHUNK - 2;
+      if (T && L) cHalf.push(D, B, MT, D, MT, A, D, A, ML, D, ML, C);
+      else if (T && R) cHalf.push(C, MT, A, C, B, MT, C, MR, B, C, D, MR);
+      else if (Bo && L) cHalf.push(B, A, ML, B, ML, C, B, C, MB, B, MB, D);
+      else if (Bo && R) cHalf.push(A, MR, B, A, D, MR, A, MB, D, A, C, MB);
+      else if (T) cHalf.push(A, C, MT, MT, C, D, MT, D, B);
+      else if (Bo) cHalf.push(A, C, MB, A, MB, B, B, MB, D);
+      else if (L) cHalf.push(A, ML, B, ML, D, B, ML, C, D);
+      else if (R) cHalf.push(A, MR, B, A, C, MR, C, D, MR);
+      else cHalf.push(A, C, B, C, D, B); // coarse cell, same diagonal direction as full res
     }
+  const idxFull = new THREE.BufferAttribute(Uint16Array.from(cFull), 1), idxHalf = new THREE.BufferAttribute(Uint16Array.from(cHalf), 1);
   const terrain = new THREE.Group();
   for (let cj = 0; cj < SEGZ; cj += CHUNK)
     for (let ci = 0; ci < SEGX; ci += CHUNK) {
-      const n = (CHUNK + 1) ** 2, cp = new Float32Array(n * 3), cn = new Float32Array(n * 3), cc = new Float32Array(n * 3);
+      const n = CR * CR, cp = new Float32Array(n * 3), cn = new Float32Array(n * 3), cc = new Float32Array(n * 3);
       for (let j = 0, k = 0; j <= CHUNK; j++)
         for (let i = 0; i <= CHUNK; i++, k += 3) {
-          const v = (cj + j) * (SEGX + 1) + ci + i;
-          cp.set([pos.getX(v), pos.getY(v), pos.getZ(v)], k);
-          cn.set([nrm.getX(v), nrm.getY(v), nrm.getZ(v)], k);
-          cc.set(colors.subarray(v * 3, v * 3 + 3), k);
+          const v = ((cj + j) * RS + ci + i) * 3;
+          cp.set(positions.subarray(v, v + 3), k);
+          cn.set(normals.subarray(v, v + 3), k);
+          cc.set(colors.subarray(v, v + 3), k);
         }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(cp, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(cn, 3));
       g.setAttribute('color', new THREE.BufferAttribute(cc, 3));
-      g.setIndex(cIndex);
+      g.setIndex(idxFull);
       g.computeBoundingSphere();
       const m = new THREE.Mesh(g, terrainMat);
       m.receiveShadow = m.castShadow = true;
@@ -346,8 +374,8 @@ export function buildWorld(scene) {
   // Grid textures for the GPU ground cover: exact heights + terrain colour (sRGB)
   const heightTex = new THREE.DataTexture(H, SEGX + 1, SEGZ + 1, THREE.RedFormat, THREE.FloatType);
   heightTex.needsUpdate = true;
-  const colorData = new Uint8Array(pos.count * 4);
-  for (let v = 0; v < pos.count; v++) {
+  const colorData = new Uint8Array(NV * 4);
+  for (let v = 0; v < NV; v++) {
     col.fromArray(colors, v * 3).convertLinearToSRGB();
     colorData.set([col.r * 255, col.g * 255, col.b * 255, 255], v * 4);
   }
@@ -563,7 +591,7 @@ export function buildWorld(scene) {
 
   // Trees: clustered-blob broadleaf canopies, tiered pines, a few giant camphor trees; canopies sway
   // Collected per 500 m chunk (one InstancedMesh per chunk and kind) so the main and shadow passes cull by chunk.
-  const MAX = 3000, TCH = 500, TNX = WX / TCH, TNZ = WZ / TCH;
+  const MAX = 3000, TCH = 1000, TNX = WX / TCH, TNZ = WZ / TCH; // 1 km chunks: quarter the draw calls of 500 m, still culls under the ~2–3 km fog
   const kinds = {
     trunks: { geo: new THREE.CylinderGeometry(0.25, 0.35, 1, 6).translate(0, 0.5, 0), mat: paint(0x6b4a2e) },
     rounds: { geo: blobCanopy(), mat: paint(0xffffff, {}, { wind: true }) },
@@ -671,14 +699,13 @@ export function buildWorld(scene) {
       const a = (k / 6) * Math.PI * 2 + rand();
       mist.push([cx + Math.cos(a) * W * 0.6, B + W * 0.12, cz + Math.sin(a) * W * 0.45, B, top, cx, W * (0.6 + rand() * 0.3)]);
     }
-    clouds.push({ x: cx, z: cz, W, B, d: 0 });
+    clouds.push({ x: cx, z: cz, W, B, y: (B + top) / 2, cx });
   }
   const spanAttr = new THREE.InstancedBufferAttribute(span.slice(), 4).setUsage(THREE.DynamicDrawUsage);
   puffGeo.setAttribute('aSpan', spanAttr);
   puffs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const baseMat = puffs.instanceMatrix.array.slice(); // unsorted source data
-  const puffCloud = new Uint16Array(NC * PPC).map((_, i) => Math.floor(i / PPC));
-  const puffOrder = Array.from({ length: NC * PPC }, (_, i) => i), puffDist = new Float32Array(NC * PPC);
+  const puffOrder = Uint16Array.from({ length: NC * PPC }, (_, i) => i), puffFar = new Float32Array(NC * PPC); // cloud c's puffs: block c*PPC
   puffs.frustumCulled = false;
   scene.add(puffs);
   const mistGeo = new THREE.BufferGeometry();
@@ -687,7 +714,9 @@ export function buildWorld(scene) {
   const mistPoints = new THREE.Points(mistGeo, cloudSpriteMaterial(WRAP));
   mistPoints.frustumCulled = false;
   scene.add(mistPoints);
-  const order = clouds.map((_, i) => i);
+  const order = Uint8Array.from(clouds, (_, i) => i), drawOrder = order.slice(), cloudD = new Float32Array(NC), cloudFar = new Float32Array(NC);
+  const sortedAt = new THREE.Vector3(Infinity, 0, 0);
+  let reordered = false, sortAge = 0;
 
   // Shadow box: grows with altitude, sits ahead of the camera on the ground, snapped to texels (no shimmer)
   const LX = new THREE.Vector3(), LY = new THREE.Vector3();
@@ -725,28 +754,65 @@ export function buildWorld(scene) {
     sun.position.copy(_c).addScaledVector(SUN_DIR, 2000);
   };
 
-  // Feed the nearest clouds to the cloud-shadow shader
-  const updateCloudShadows = (camPos) => {
-    for (const c of clouds) {
-      c.cx = WRAP.x0 + (((c.x + drift.value - WRAP.x0) % WRAP.span) + WRAP.span) % WRAP.span;
-      c.d = (c.cx - camPos.x) ** 2 + (c.z - camPos.z) ** 2;
+  // Terrain LOD: distant chunks draw the stitched half-res index (~3.8× fewer triangles). Hysteresis so a
+  // chunk straddling the boundary doesn't flip every frame. Collision is untouched (groundAt reads H).
+  const LOD_FAR2 = 1250 * 1250, LOD_NEAR2 = 1150 * 1150;
+  const updateLod = (camPos) => {
+    for (const m of terrain.children) {
+      const c = m.geometry.boundingSphere.center;
+      const d2 = (c.x - camPos.x) ** 2 + (c.z - camPos.z) ** 2;
+      if (d2 > LOD_FAR2) { if (m.geometry.index !== idxHalf) m.geometry.setIndex(idxHalf); }
+      else if (d2 < LOD_NEAR2 && m.geometry.index !== idxFull) m.geometry.setIndex(idxFull);
     }
-    order.sort((a, b) => clouds[a].d - clouds[b].d);
+  };
+
+  // Insertion sort of idx[from, to) by ascending key: orders barely change between frames, so this is ~linear
+  const isort = (idx, key, from = 0, to = idx.length) => {
+    let moved = false;
+    for (let i = from + 1; i < to; i++) {
+      const v = idx[i], k = key[v];
+      let j = i - 1;
+      for (; j >= from && key[idx[j]] > k; j--) idx[j + 1] = idx[j];
+      if (j + 1 !== i) { idx[j + 1] = v; moved = true; }
+    }
+    return moved;
+  };
+  // Every frame: feed the nearest clouds to the cloud-shadow shader. Puffs are drawn back-to-front for their soft edges,
+  // cloud by cloud with each cloud's puffs sorted within its block. The buffers are only rewritten when the camera has
+  // moved (relative to the drifting clouds) far enough, for the nearest cloud, to reorder puffs, or at most every 0.5 s
+  // when clouds swapped places: two clouds only swap while about equidistant, i.e. not overlapping on screen.
+  const updateClouds = (camPos, dt) => {
+    let near = Infinity;
+    for (let i = 0; i < NC; i++) {
+      const c = clouds[i];
+      c.cx = WRAP.x0 + (((c.x + drift.value - WRAP.x0) % WRAP.span) + WRAP.span) % WRAP.span;
+      cloudD[i] = (c.cx - camPos.x) ** 2 + (c.z - camPos.z) ** 2;
+      cloudFar[i] = -cloudD[i] - (c.y - camPos.y) ** 2;
+      near = Math.min(near, -cloudFar[i]);
+    }
+    isort(order, cloudD);
     for (let i = 0; i < NCS; i++) {
       const c = clouds[order[i]];
       cloudUniform.value[i].set(c.cx, c.z, c.W, c.B);
     }
-    // Sort cloud puffs back-to-front so their soft edges blend correctly
-    for (let i = 0; i < puffDist.length; i++) {
-      const c = clouds[puffCloud[i]];
-      puffDist[i] = (baseMat[i * 16 + 12] + c.cx - c.x - camPos.x) ** 2 + (baseMat[i * 16 + 13] - camPos.y) ** 2 + (baseMat[i * 16 + 14] - camPos.z) ** 2;
-    }
-    puffOrder.sort((a, b) => puffDist[b] - puffDist[a]);
+    const step = Math.max(4, 0.15 * Math.sqrt(near));
+    const rx = camPos.x - drift.value; // camera position in the clouds' drifting frame
+    if (isort(drawOrder, cloudFar)) reordered = true;
+    sortAge += dt;
+    if (!(reordered && sortAge > 0.5) && (rx - sortedAt.x) ** 2 + (camPos.y - sortedAt.y) ** 2 + (camPos.z - sortedAt.z) ** 2 < step * step) return;
+    sortedAt.set(rx, camPos.y, camPos.z);
+    reordered = false; sortAge = 0;
     const dst = puffs.instanceMatrix.array, dSpan = spanAttr.array;
-    for (let i = 0; i < puffOrder.length; i++) {
-      const j = puffOrder[i];
-      for (let k = 0; k < 16; k++) dst[i * 16 + k] = baseMat[j * 16 + k];
-      for (let k = 0; k < 4; k++) dSpan[i * 4 + k] = span[j * 4 + k];
+    let n = 0;
+    for (const ci of drawOrder) {
+      const dx = clouds[ci].cx - clouds[ci].x - camPos.x, b = ci * PPC;
+      for (let j = b; j < b + PPC; j++) puffFar[j] = -((baseMat[j * 16 + 12] + dx) ** 2 + (baseMat[j * 16 + 13] - camPos.y) ** 2 + (baseMat[j * 16 + 14] - camPos.z) ** 2);
+      isort(puffOrder, puffFar, b, b + PPC);
+      for (let i = b; i < b + PPC; i++, n++) {
+        const j = puffOrder[i];
+        for (let k = 0; k < 16; k++) dst[n * 16 + k] = baseMat[j * 16 + k];
+        for (let k = 0; k < 4; k++) dSpan[n * 4 + k] = span[j * 4 + k];
+      }
     }
     puffs.instanceMatrix.needsUpdate = spanAttr.needsUpdate = true;
   };
@@ -758,7 +824,8 @@ export function buildWorld(scene) {
       drift.value += 4 * dt;
       sky.position.copy(camera.position);
       updateShadow(camera, planePos);
-      updateCloudShadows(camera.position);
+      updateLod(camera.position);
+      updateClouds(camera.position, dt);
       blades.rotation.z += dt * 0.6;
       const wYaw = Math.atan2(-wind.vec.z, wind.vec.x), droop = -(1 - Math.min(1, wind.now / 9)) * 1.2;
       for (const { sock, heading } of socks) {
