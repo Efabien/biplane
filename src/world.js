@@ -4,7 +4,7 @@ import { SUN_DIR, NCS, time, drift, wind, applyTime, cloudUniform, paint, stripe
 
 export const HALF = 2000, WATER = 0, RUNWAY_H = 15, RW_L = 600, RW_W = 30;
 // World grid: the home island (radius HALF, centred on the origin), a volcanic island to the east,
-// then a sea-stack crossing and a coral atoll in the far east
+// then a sea-stack crossing and a coral atoll in the far east, and the Pine Vale's forested island in the north-east
 export const X0 = -HALF, Z0 = -HALF, SEGX = 1280, SEGZ = 512, CELL = (HALF * 2) / SEGZ, WX = SEGX * CELL, WZ = SEGZ * CELL;
 export const GRID = { x0: X0, z0: Z0, cell: CELL, segx: SEGX, segz: SEGZ };
 export const GLIDE = (3 * Math.PI) / 180; // standard 3° approach path
@@ -23,6 +23,8 @@ export const STRIPS = [
   { name: 'Headland', x: 3600, z: 1480, heading: 0, len: 300, w: 22, h: 45, aim: 60, surface: 'grass', blend: 40, headland: true, takeoff: -1 },
   // a built-up sandbar along the atoll ring's south-east arc: both approaches over water
   { name: 'Atoll sandbar', x: 7423, z: 854, heading: 2.79, len: 320, w: 20, h: 2, aim: 60, surface: 'sand', blend: 60 },
+  // on the Pine Vale's floor beside the river: land up the valley toward the waterfall (heading), take off out to sea
+  { name: 'Pine Vale', x: 7290, z: -1145, heading: Math.PI / 2, len: 320, w: 20, h: 4.5, aim: 60, surface: 'grass', blend: 50, takeoff: -1 },
 ];
 for (const st of STRIPS) { st.fx = -Math.sin(st.heading); st.fz = -Math.cos(st.heading); st.slope ??= 0; st.blend ??= 160; st.takeoff ??= 1; }
 const along = (st, x, z) => (x - st.x) * st.fx + (z - st.z) * st.fz;
@@ -88,6 +90,20 @@ export const STACKS = [];
     STACKS.push({ x, z, r: 16 + sr() * 26, h: 28 + sr() * 45 });
   }
 }
+// Pine Vale: a river valley running due west from its mouth (x, z) into the island, walled by spruce-dark
+// mountains. u = distance up the valley (0 at the mouth), v = offset to the south. At u = fall the river drops
+// off a hanging valley (floor at top) in a waterfall; below it the river runs at sea level out to the sea.
+export const VALE = { x: 7700, z: -1050, fall: 1350, top: 60, stream: 58.8 };
+export const valeUV = (x, z) => [VALE.x - x, z - VALE.z];
+export const valeXZ = (u, v) => [VALE.x - u, VALE.z + v];
+// River centreline (v) below the falls: along the south bank past the strip, a swing north, then straight into the plunge pool
+export function valeRiver(u) {
+  const a = 58 + 24 * Math.sin(u * 0.008 - 1.0), b = -70 * Math.sin((u - 560) * 0.0072), m = smooth(520, 760, u);
+  return (a * (1 - m) + b * m) * (1 - smooth(VALE.fall - 420, VALE.fall - 120, u));
+}
+export const valeRiverWidth = (u) => 11 + 9 * (1 - smooth(0, 1000, u)); // half-width, wider toward the mouth
+export const VALE_POOL = { u: VALE.fall - 50, r: 28 }; // plunge pool at the cliff's toe
+
 // Railway: straight line across a valley at a fixed deck height; tunnels at both ends (portals computed below)
 export const RAIL = { cx: -650, cz: 1175, dir: (40 * Math.PI) / 180, L: 350, deck: 80 };
 RAIL.fx = Math.sin(RAIL.dir); RAIL.fz = Math.cos(RAIL.dir);
@@ -157,8 +173,39 @@ function seaStacks(x, z) {
   }
   return h;
 }
+// Pine Vale: flat valley floor rising gently inland, walls up to ~350 m that fall steeply to the sea behind,
+// headlands at the mouth, a cliff up to the hanging valley and a lower head wall behind it (the sun sets over it).
+// The river is carved below sea level so the sea's water fills it; the stream above the falls has its own surface.
+function pineVale(x, z) {
+  const [u, v] = valeUV(x, z), V = VALE;
+  if (u < -250 || u > 2300 || Math.abs(v) > 880) return -35;
+  const ue = u + 45 * Math.sin(v * 0.017 + 1) + 25 * Math.sin(v * 0.043); // a ragged shoreline at the mouth
+  let fl = ue < 0 ? Math.max(-35, 3.2 + ue * 0.3) : 3.2 + u * 0.004; // shelving off quickly, clear of the map's east edge
+  // the cliff up to the hanging valley: a ragged horseshoe, furthest forward where the stream goes over
+  const uc = u - 0.004 * v * v - (noise(v * 0.035 + 3, 7) - 0.5) * 24 * smooth(15, 50, Math.abs(v));
+  fl += (V.top + (u - V.fall) * 0.01 - fl) * smooth(V.fall - 14, V.fall, uc);
+  fl += (noise(x * 0.03 + 17, z * 0.03) - 0.5) * 2;
+  const wob = 35 * Math.sin(u * 0.0021 + 0.5), fw = 115 + 125 * (1 - smooth(0, 1000, u)), W = Math.max(0, Math.abs(v - wob) - fw);
+  const peak = 190 + 150 * fbm(x * 0.002 + 91, z * 0.002 - 17);
+  let wall = peak * smooth(0, 420, W) ** 1.3 + (fbm(x * 0.008 + 33, z * 0.008 + 8) - 0.5) * 70 * smooth(0, 120, W);
+  wall *= smooth(-300, 220, u); // the walls end in headlands either side of the mouth
+  const head = 110 * smooth(V.fall + 120, V.fall + 470, u) * (0.75 + 0.5 * fbm(x * 0.006 - 5, z * 0.006 + 44)); // saddle at the head
+  let h = fl + Math.max(0, wall) + head;
+  h = -35 + (h + 35) * (1 - smooth(540, 880, Math.abs(v))) * (1 - smooth(1980, 2260, u)); // steep outer flanks into the sea
+  // never reach into the volcanic island's footprint (its terrain, and the trees seeded from it, stay exactly as they were)
+  h = -35 + (h + 35) * smooth(1.05, 1.15, Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz));
+  if (u < V.fall) { // river + plunge pool (the river channel stops inside the pool, clear of the cliff)
+    const P = VALE_POOL, d = Math.min(u < P.u ? Math.abs(v - valeRiver(u)) - valeRiverWidth(u) : Infinity, Math.hypot(u - P.u, v) - P.r);
+    h = Math.min(h, -9 + (h + 9) * smooth(-6, 12, d));
+  }
+  if (u > V.fall - 25) { // the stream's bed on the hanging valley, fading into the head wall where it springs
+    const cut = 56.5 + (h - 56.5) * smooth(8, 20, Math.abs(v));
+    h = Math.min(h, h + (cut - h) * (1 - smooth(V.fall + 150, V.fall + 230, u)));
+  }
+  return h;
+}
 function baseHeight(x, z) {
-  let h = Math.max(homeIsland(x, z), volcanicIsland(x, z), atoll(x, z), seaStacks(x, z));
+  let h = Math.max(homeIsland(x, z), volcanicIsland(x, z), atoll(x, z), seaStacks(x, z), pineVale(x, z));
   for (const st of STRIPS) {
     const dv = Math.max(Math.abs(across(st, x, z)) - st.w / 2 - 15, 0), du = Math.max(Math.abs(along(st, x, z)) - st.len / 2 - 30, 0);
     h += (st.h + st.slope * along(st, x, z) - h) * (1 - smooth(0, st.blend, Math.hypot(du, dv)));
@@ -305,13 +352,19 @@ export function buildWorld(scene) {
     }
   const sand = new THREE.Color(0xe2cf9e), grassA = new THREE.Color(0xa8d060), grassB = new THREE.Color(0x5c9a46);
   const rock = new THREE.Color(0x8e8878), snow = new THREE.Color(0xf4f6f8), fern = new THREE.Color(0x7cc653), jungle = new THREE.Color(0x3a8a3c);
+  const shingle = new THREE.Color(0x6f7468), slate = new THREE.Color(0x565c64), mossA = new THREE.Color(0x4f7d58), mossB = new THREE.Color(0x284f46);
   for (let j = 0, v = 0; j <= SEGZ; j++)
     for (let i = 0; i <= SEGX; i++, v++) {
       const x = X0 + i * CELL, z = Z0 + j * CELL, h = H[v];
       positions[v * 3] = x; positions[v * 3 + 1] = h; positions[v * 3 + 2] = z;
       const s = Math.hypot(H[v + (i < SEGX ? 1 : 0)] - H[v - (i > 0 ? 1 : 0)], H[v + (j < SEGZ ? RS : 0)] - H[v - (j > 0 ? RS : 0)]) / (2 * CELL);
       const n = fbm(x * 0.01, z * 0.01), tropic = x > HALF && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) < 1.05;
-      if (h < 2.5) col.copy(sand);
+      const [vu, vv] = valeUV(x, z), vale = !tropic && x > 5350 && vu > -250 && vu < 2300 && Math.abs(vv) < 880;
+      if (vale) { // Pine Vale: grey shingle banks, moss-dark meadows and slopes, slate crags and summits
+        if (h < 2.5) col.copy(shingle);
+        else if (s > 1.45 || h > 320 + n * 40) col.copy(slate).lerp(mossB, s > 1.45 ? 0.15 : 0.35);
+        else col.copy(mossA).lerp(mossB, smooth(0.3, 0.7, n + h / 400));
+      } else if (h < 2.5) col.copy(sand);
       else if (tropic) col.copy(s > 0.9 ? rock : fern).lerp(jungle, s > 0.9 ? 0.35 : smooth(0.3, 0.7, n + h / 500)); // lush volcanic island, rock only on cliffs
       else if (h > 250 + n * 60) col.copy(snow);
       else if (h > 140 + n * 40 || s > 0.75) col.copy(rock);
@@ -596,13 +649,14 @@ export function buildWorld(scene) {
     trunks: { geo: new THREE.CylinderGeometry(0.25, 0.35, 1, 6).translate(0, 0.5, 0), mat: paint(0x6b4a2e) },
     rounds: { geo: blobCanopy(), mat: paint(0xffffff, {}, { wind: true }) },
     pines: { geo: tieredPine(), mat: paint(0xffffff, {}, { wind: true }) },
+    spruces: { geo: spruce(), mat: paint(0xffffff, {}, { wind: true }) },
   };
   const chunks = new Map();
   let nT = 0;
   const record = (kind, x, z, y, sx, sy, sz, ry = 0, color = null) => {
     const ci = Math.min(TNX - 1, Math.max(0, Math.floor((x - X0) / TCH))), cj = Math.min(TNZ - 1, Math.max(0, Math.floor((z - Z0) / TCH)));
     const key = cj * TNX + ci;
-    if (!chunks.has(key)) chunks.set(key, { trunks: [], rounds: [], pines: [] });
+    if (!chunks.has(key)) chunks.set(key, { trunks: [], rounds: [], pines: [], spruces: [] });
     dummy.position.set(x, y, z);
     dummy.rotation.set(0, ry, 0);
     dummy.scale.set(sx, sy, sz);
@@ -636,6 +690,8 @@ export function buildWorld(scene) {
   const nHome = nT;
   for (let t = 0; t < 60000 && nT - nHome < 4000; t++) {
     const x = ISLE.x + (rand() * 2 - 1) * ISLE.rx, z = ISLE.z + (rand() * 2 - 1) * ISLE.rz;
+    // the Pine Vale's land, open sea before it existed: rejected at the same cost in rand() as the sea was (keeps the sequence)
+    if (x > 5350 && z < -150 && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) > 1.02) continue;
     const h = groundAt(x, z);
     if (h < 3 || h > 330) continue;
     if (fbm(x * 0.004 - 30, z * 0.004 + 12) < 0.44 && rand() > 0.05) continue;
@@ -655,6 +711,23 @@ export function buildWorld(scene) {
     n++;
   }
   for (const s of STACKS) if (s.h < 48 && ar() < 0.6) addTree(s.x, s.z, 0.6 + ar() * 0.3, false);
+  // Pine Vale: tall narrow spruces crowding both walls down to the river banks, thinning on the crags and summits
+  // (own rng: the rest of the world stays put)
+  const vr = rng(29), clearOfStrips = (x, z) => !STRIPS.some((st) => Math.abs(across(st, x, z)) < 70 && Math.abs(along(st, x, z)) < st.len / 2 + 780); // + the full 700 m approaches
+  for (let t = 0, n = 0; t < 140000 && n < 9000; t++) {
+    const [x, z] = valeXZ(-380 + vr() * 2620, (vr() * 2 - 1) * (vr() < 0.7 ? 560 : 860)); // thickest facing the valley
+    const h = groundAt(x, z), sl = slopeAt(x, z);
+    if (h < 3.2 || h > 380 || sl > 1.45) continue;
+    if (fbm(x * 0.005 + 7, z * 0.005 - 3) < 0.34 + h / 1200 && vr() > 0.12) continue; // clearings, wider up high
+    if ((h > 320 || sl > 1.15) && vr() < 0.5) continue;
+    if (!clearOfStrips(x, z)) continue;
+    const H = (11 + vr() * 12) * (h > 250 ? 0.7 : 1);
+    record('trunks', x, z, h - 0.3, 1.1 + H * 0.02, H * 0.45, 1.1 + H * 0.02);
+    col.setHSL(0.44 + vr() * 0.07, 0.24 + vr() * 0.14, 0.12 + vr() * 0.08, THREE.SRGBColorSpace); // near-black blue-greens
+    record('spruces', x, z, h - 0.3, H * (0.4 + vr() * 0.14), H, H * (0.4 + vr() * 0.14), vr() * 6, col);
+    addObstacle(x, z, H * 0.14, h + H);
+    n++;
+  }
   for (const chunk of chunks.values())
     for (const [kind, list] of Object.entries(chunk)) {
       if (!list.length) continue;
@@ -726,7 +799,7 @@ export function buildWorld(scene) {
     hemi.color.setHex(t.hemiSky); hemi.groundColor.setHex(t.hemiGround); hemi.intensity = t.hemiI;
     scene.background.setHex(t.horizon);
     scene.fog.density = t.fog;
-    paneMat.emissive.setHex(name === 'dusk' || name === 'dawn' ? 0xdd8f38 : 0x0e1218); // lit windows in the low light
+    paneMat.emissive.setHex(name === 'dusk' || name === 'dawn' || name === 'twilight' ? 0xdd8f38 : 0x0e1218); // lit windows in the low light
     LX.crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIR).normalize();
     LY.crossVectors(SUN_DIR, LX);
   };
@@ -853,6 +926,26 @@ export function blobCanopy() {
     w.set(n.getX(i), n.getY(i), n.getZ(i)).multiplyScalar(0.4).addScaledVector(v, 0.6).normalize();
     n.setXYZ(i, w.x, w.y, w.z);
   }
+  return g;
+}
+
+// Spruce: a tall, narrow spire of drooping tiers with ragged tips, unit height (tiers from 0.08 up)
+function spruce() {
+  const sr = rng(41), tiers = [];
+  for (let k = 0; k < 7; k++) {
+    const t = k / 7, r = 0.5 * (1 - t) ** 1.1 + 0.03, h = 0.2 - t * 0.07;
+    const g = new THREE.ConeGeometry(r, h, 7).translate(0, 0.08 + t * 0.84 + h / 2, 0).rotateY(sr() * 6);
+    const p = g.attributes.position, base = 0.08 + t * 0.84 + 0.001, jag = Array.from({ length: 8 }, () => 0.7 + sr() * 0.6);
+    for (let i = 0; i < p.count; i++) { // push the rim's tips in and out and droop them, so the silhouette is ragged
+      if (p.getY(i) > base) continue;
+      const a = Math.round(((Math.atan2(p.getZ(i), p.getX(i)) + Math.PI * 2) % (Math.PI * 2)) / ((Math.PI * 2) / 7)) % 7;
+      p.setXYZ(i, p.getX(i) * jag[a], p.getY(i) - 0.025 * jag[a], p.getZ(i) * jag[a]);
+    }
+    tiers.push(g.toNonIndexed());
+  }
+  tiers.push(new THREE.ConeGeometry(0.04, 0.1, 5).translate(0, 1.0, 0).toNonIndexed());
+  const g = mergeGeometries(tiers);
+  g.computeVertexNormals();
   return g;
 }
 

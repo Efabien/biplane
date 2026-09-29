@@ -26,6 +26,15 @@ export const TIMES = {
     cloudTop: 0xffe6cc, cloudBase: 0x7f7fa8, cloudWarm: 0xffa870,
     ramp: [rgb(0.42, 0.44, 0.7), rgb(0.95, 0.82, 0.72), rgb(1.2, 0.95, 0.72)],
   },
+  // Last light: the sun just over the ridge at the head of the Pine Vale (due west), a teal sky already
+  // pricked with stars, a broad gold glow low in the west, blue-teal shadows and deep haze
+  twilight: {
+    label: 'Twilight', sun: [-1, 0.13, 0.02], fog: 0.0007, stars: 1, glowPow: 2.2, glowAmt: 0.95,
+    zenith: 0x10283f, mid: 0x2f6f82, horizon: 0x6f9fa4, glow: 0xffc66e, sunDisc: 0xfff4d0, distTint: 0x4f7896,
+    sunLight: 0xffbe7a, sunI: 2.0, hemiSky: 0x6f98b4, hemiGround: 0x2c4238, hemiI: 0.9,
+    cloudTop: 0x8fbfd0, cloudBase: 0x2f4a66, cloudWarm: 0xffa66a,
+    ramp: [rgb(0.3, 0.46, 0.66), rgb(0.82, 0.86, 0.88), rgb(1.3, 1.0, 0.72)],
+  },
 };
 // Shared by every material (paint, sky, clouds, water, grass, smoke, birds)
 export const atmo = Object.fromEntries(
@@ -33,12 +42,15 @@ export const atmo = Object.fromEntries(
     .map((k) => [k, { value: new THREE.Color() }]),
 );
 atmo.uSunDir = { value: SUN_DIR };
+// How wide and strong the sun's glow spreads through the haze, and starlight (sky dome only)
+Object.assign(atmo, { uGlowPow: { value: 6 }, uGlowAmt: { value: 0.6 }, uStars: { value: 0 } });
 export function applyTime(name) {
   const t = TIMES[name];
   SUN_DIR.set(...t.sun).normalize();
   for (const [u, k] of [['uHorizon', 'horizon'], ['uGlow', 'glow'], ['uZenith', 'zenith'], ['uMid', 'mid'], ['uSunDisc', 'sunDisc'], ['uDistTint', 'distTint'],
     ['uCloudTop', 'cloudTop'], ['uCloudBase', 'cloudBase'], ['uCloudWarm', 'cloudWarm']]) atmo[u].value.setHex(t[k]);
   atmo.uRampShadow.value.copy(t.ramp[0]); atmo.uRampMid.value.copy(t.ramp[1]); atmo.uRampLit.value.copy(t.ramp[2]);
+  atmo.uGlowPow.value = t.glowPow ?? 6; atmo.uGlowAmt.value = t.glowAmt ?? 0.6; atmo.uStars.value = t.stars ?? 0;
   return t;
 }
 applyTime('golden');
@@ -67,6 +79,7 @@ const withAtmo = (u) => Object.assign(u, atmo);
 // The haze is used by the sky dome, fog and water reflections so they all meet seamlessly.
 const COMMON = /* glsl */ `
 uniform vec3 uSunDir, uHorizon, uGlow, uZenith, uMid, uSunDisc, uDistTint, uCloudTop, uCloudBase, uCloudWarm, uRampShadow, uRampMid, uRampLit;
+uniform float uGlowPow, uGlowAmt;
 #define SUN_DIR uSunDir
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vnoise(vec2 p) {
@@ -75,7 +88,7 @@ float vnoise(vec2 p) {
 }
 vec3 hazeColor(vec3 d) {
   float s = max(dot(d, SUN_DIR), 0.0);
-  return mix(uHorizon, uGlow, pow(s, 6.0) * 0.6);
+  return mix(uHorizon, uGlow, pow(max(s, 1e-4), max(uGlowPow, 1.0)) * uGlowAmt); // guarded: stock materials (prop blur) lack these uniforms, and pow(0, 0) is NaN
 }
 `;
 
@@ -200,21 +213,35 @@ export function skyMaterial() {
       varying vec3 vDir;
       void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime;
+      uniform float uTime, uStars;
       varying vec3 vDir;
       #include <fog_pars_fragment>
+      float hash13(vec3 p3) { p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
       void main() {
         vec3 d = normalize(vDir);
         vec3 col = mix(uMid, uZenith, smoothstep(0.12, 0.85, d.y));
         col = mix(hazeColor(d), col, smoothstep(0.0, 0.22, d.y));
         float s = max(dot(d, SUN_DIR), 0.0);
         col += uGlow * pow(s, 40.0) * 0.25;
+        float cirrus = 0.0;
         if (d.y > 0.02) {
           vec2 cuv = d.xz / (d.y + 0.08) * 1.2 + vec2(uTime * 0.004, 0.0);
           vec2 st = vec2(cuv.x * 0.6 + cuv.y * 0.35, cuv.y * 3.0 - cuv.x * 0.8);
           float c = vnoise(st * 1.3) * 0.6 + vnoise(st * 3.1) * 0.3 + vnoise(st * 7.0) * 0.1;
           c = smoothstep(0.55, 0.85, c) * smoothstep(0.02, 0.25, d.y) * 0.55;
           col = mix(col, mix(uCloudTop, uGlow, pow(s, 4.0) * 0.6), c);
+          cirrus = c;
+        }
+        if (uStars > 0.0 && d.y > 0.05) { // stars: one jittered point per direction cell, fading toward the glow
+          vec3 g = d * 260.0, cell = floor(g);
+          float k = hash13(cell);
+          if (k > 0.965) {
+            vec3 sp = cell + 0.5 + (vec3(hash13(cell + 7.1), hash13(cell + 3.7), hash13(cell + 1.3)) - 0.5) * 0.5;
+            float star = 1.0 - smoothstep(0.08, 0.3, length(g - sp));
+            float tw = 0.75 + 0.25 * sin(uTime * (1.5 + k * 40.0) + k * 900.0);
+            col += vec3(0.95, 0.97, 1.0) * star * tw * (k - 0.965) / 0.035 * uStars
+                 * smoothstep(0.05, 0.35, d.y) * (1.0 - smoothstep(0.2, 0.8, s)) * (1.0 - cirrus * 1.6);
+          }
         }
         col = mix(col, uSunDisc, smoothstep(0.9990, 0.9994, s));
         gl_FragColor = vec4(col, 1.0);

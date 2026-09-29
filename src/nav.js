@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { groundAt, STRIPS, VILLAGE, LIGHTHOUSE, CASTLE, RUIN, RAIL, VOLCANO, ATOLL, SEA_LIGHT, SEAFORT, X0, Z0, WX, WZ } from './world.js';
+import { groundAt, STRIPS, VILLAGE, LIGHTHOUSE, CASTLE, RUIN, RAIL, VOLCANO, ATOLL, SEA_LIGHT, SEAFORT, VALE, X0, Z0, WX, WZ } from './world.js';
 
 // Vintage navigation: a brass-framed compass tape (top right) and an old paper map in a brass ring (bottom right).
 const PLACES = [
@@ -13,6 +13,8 @@ const PLACES = [
   { name: 'Sea stacks', x: 6250, z: 750 },
   { name: 'Offshore light', x: SEA_LIGHT.x, z: SEA_LIGHT.z },
   { name: 'Atoll', x: ATOLL.x, z: ATOLL.z },
+  { name: 'Pine Vale', x: VALE.x - 700, z: VALE.z - 330 },
+  { name: 'Waterfall', x: VALE.x - VALE.fall, z: VALE.z + 60 },
 ];
 // The map follows the plane, showing EXT metres around it; the paper covers the whole world plus a margin of sea
 const EXT = 2150, MAP = 176, RING = 9, SIZE = MAP + 2 * RING, PPM = MAP / (2 * EXT);

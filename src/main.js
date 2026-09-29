@@ -8,6 +8,7 @@ import { createGroundCover } from './grass.js';
 import { createPlane, syncPlane, LIVERIES } from './plane.js';
 import { createSmoke } from './smoke.js';
 import { buildLandmarks } from './landmarks.js';
+import { buildVale } from './vale.js';
 import { createLife } from './life.js';
 import { createNav } from './nav.js';
 import { time, pointScale, TIMES, WINDS, wind, updateWind } from './style.js';
@@ -42,6 +43,7 @@ const park = (id) => {
 park('blue');
 const smoke = createSmoke(scene);
 const landmarks = buildLandmarks(scene, smoke);
+const vale = buildVale(scene, smoke);
 const life = createLife(scene, world, smoke);
 const nav = createNav();
 const _size = new THREE.Vector2();
@@ -145,8 +147,12 @@ function quitAdventure() {
   resumeBtn.hidden = true;
   refreshMenu();
 }
-// Adventure rewards change the world: the lighthouse lamp (lit at dusk and dawn once repaired) and the pilot's red scarf
-function updateLamp() { landmarks.setLamp(!!adventure?.flags.lamp && (timeNow === 'dusk' || timeNow === 'dawn')); }
+// Adventure rewards change the world: the lighthouse lamp (lit in the low light once repaired) and the pilot's red scarf.
+// Also called on every change of the time of day, so the Pine Vale's fireflies come out with the dusk.
+function updateLamp() {
+  landmarks.setLamp(!!adventure?.flags.lamp && ['dusk', 'dawn', 'twilight'].includes(timeNow));
+  vale.setTime(timeNow);
+}
 function applyFlags(flags) {
   updateLamp();
   if (flags.scarf) for (const p of Object.values(planes)) p.scarf.children[0].material.color.setHex(0xc0473a);
@@ -299,7 +305,7 @@ function frame() {
   updateCamera(dt);
   pointScale.value = renderer.getDrawingBufferSize(_size).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
   world.update(live || !started ? dt : 0, camera, flight.pos);
-  if (live || !started) { landmarks.update(dt, time.value, camera.position); life.update(dt, camera.position); }
+  if (live || !started) { landmarks.update(dt, time.value, camera.position); vale.update(dt, camera.position); life.update(dt, camera.position); }
   sound.update(flight, !live);
   nav.update(dt, flight, adventure.target);
   cover.update(camera.position);
