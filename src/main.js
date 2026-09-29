@@ -9,6 +9,7 @@ import { createPlane, syncPlane, LIVERIES } from './plane.js';
 import { createSmoke } from './smoke.js';
 import { buildLandmarks } from './landmarks.js';
 import { buildVale } from './vale.js';
+import { buildHarbours } from './harbours.js';
 import { createLife } from './life.js';
 import { createNav } from './nav.js';
 import { time, pointScale, TIMES, WINDS, wind, updateWind } from './style.js';
@@ -44,6 +45,7 @@ park('blue');
 const smoke = createSmoke(scene);
 const landmarks = buildLandmarks(scene, smoke);
 const vale = buildVale(scene, smoke);
+const harbours = buildHarbours(scene);
 const life = createLife(scene, world, smoke);
 const nav = createNav();
 const _size = new THREE.Vector2();
@@ -305,7 +307,7 @@ function frame() {
   updateCamera(dt);
   pointScale.value = renderer.getDrawingBufferSize(_size).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
   world.update(live || !started ? dt : 0, camera, flight.pos);
-  if (live || !started) { landmarks.update(dt, time.value, camera.position); vale.update(dt, camera.position); life.update(dt, camera.position); }
+  if (live || !started) { landmarks.update(dt, time.value, camera.position); vale.update(dt, camera.position); harbours.update(time.value); life.update(dt, camera.position); }
   sound.update(flight, !live);
   nav.update(dt, flight, adventure.target);
   cover.update(camera.position);
