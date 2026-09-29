@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- Headless render harness: builds the full scene (world, landmarks, vale, harbours, life, ground cover) without the
+     plane or HUD and renders one view. Driven by tools/shot.sh; open it in a browser too (served over http).
+     Query: cam=x,y,z,lookX,lookY,lookZ | at=<strip name or landmark> [&a=bearing rad&d=dist m&y=height m]
+            t=golden|dawn|dusk|twilight  w,h=pixels  lamp=1 (lighthouse lamps on)  frames=N (time N frames)
+     Result in document.title: "OK build=<ms> calls=<n> tris=<n> [frame=<ms>]" or "ERR <message>". -->
+<html><head><meta charset="utf-8">
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+<style>html, body { margin: 0; background: #000; } canvas { display: block; }</style>
+</head><body><script type="module">
+import * as THREE from 'three';
+import * as W from '../src/world.js';
+import { buildLandmarks } from '../src/landmarks.js';
+import { buildVale } from '../src/vale.js';           // shot.sh -r stubs these two (as null) in commits that predate them
+import { buildHarbours } from '../src/harbours.js';
+import { createLife } from '../src/life.js';
+import { createGroundCover } from '../src/grass.js';
+import { time, pointScale } from '../src/style.js';
+try {
+  const q = new URLSearchParams(location.search), w = +(q.get('w') ?? 1280), h = +(q.get('h') ?? 800);
+  const r = new THREE.WebGLRenderer({ antialias: true });
+  r.setSize(w, h); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(r.domElement);
+  const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(+(q.get('fov') ?? 60), w / h, 0.3, 9000);
+  const smoke = { spawn() {} }; // particles are left out: they need the frame loop to look right
+  const t0 = performance.now(), world = W.buildWorld(scene), build = performance.now() - t0;
+  const cover = createGroundCover(scene, world), lm = buildLandmarks(scene, smoke);
+  const vale = buildVale?.(scene, smoke), harb = buildHarbours?.(scene);
+  createLife(scene, world, smoke);
+  const tod = q.get('t') ?? 'golden';
+  world.setTime(tod); vale?.setTime(tod); lm.setLamp(q.get('lamp') === '1');
+
+  // camera: explicit, or orbiting a named place
+  const PLACES = { village: W.VILLAGE, lighthouse: W.LIGHTHOUSE, castle: W.CASTLE, ruin: W.RUIN, volcano: W.VOLCANO, atoll: W.ATOLL,
+    sealight: W.SEA_LIGHT, seafort: W.SEAFORT, ...(W.VALE && { waterfall: { x: W.VALE.x - W.VALE.fall, z: W.VALE.z }, vale: { x: W.VALE.x - 600, z: W.VALE.z } }) };
+  if (q.get('cam')) {
+    const [x, y, z, lx, ly, lz] = q.get('cam').split(',').map(Number);
+    cam.position.set(x, y, z); cam.lookAt(lx, ly, lz);
+  } else {
+    const name = q.get('at') ?? 'Airfield', p = PLACES[name.toLowerCase()] ?? W.STRIPS.find((s) => s.name === name);
+    if (!p) throw new Error(`unknown place "${name}"`);
+    const a = +(q.get('a') ?? 0.8), d = +(q.get('d') ?? 250), gy = Math.max(0, W.groundAt(p.x, p.z));
+    cam.position.set(p.x + Math.sin(a) * d, gy + +(q.get('y') ?? d * 0.3), p.z + Math.cos(a) * d);
+    cam.lookAt(p.x, gy + 5, p.z);
+  }
+  cam.position.y = Math.max(cam.position.y, W.groundAt(cam.position.x, cam.position.z) + 2);
+  pointScale.value = h / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+  time.value = +(q.get('time') ?? 5);
+  cover.update(cam.position); harb?.update(time.value); lm.update(0, time.value, cam.position);
+  world.update(0.016, cam, cam.position);
+  r.render(scene, cam);
+  const { calls, triangles } = r.info.render;
+  let frame = '';
+  if (q.get('frames')) { // GPU-synced timing: best of 3 runs of N frames
+    const gl = r.getContext(), px = new Uint8Array(4), n = +q.get('frames'), runs = [];
+    for (let k = 0; k < 3; k++) {
+      const s = performance.now();
+      for (let i = 0; i < n; i++) { world.update(0.016, cam, cam.position); r.render(scene, cam); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); }
+      runs.push((performance.now() - s) / n);
+    }
+    frame = ` frame=${Math.min(...runs).toFixed(2)}`;
+  }
+  document.title = `OK build=${build.toFixed(0)} calls=${calls} tris=${triangles}${frame}`;
+} catch (e) { document.title = 'ERR ' + e.message; }
+</script></body></html>
