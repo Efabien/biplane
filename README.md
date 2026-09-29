@@ -8,7 +8,9 @@ Everything is generated in code: terrain, trees, buildings, textures, sky, water
 
 ## Play
 
-The game has to be served over http, because browsers block ES modules on `file://`.
+**Online: <https://efabien.github.io/biplane/>** (GitHub Pages, served straight from `master`).
+
+To run it locally, it has to be served over http, because browsers block ES modules on `file://`.
 
 - **macOS:** double-click `play.command`. It serves the folder on port 8000 with caching off and opens the browser.
 - **Anywhere:** run `python3 -m http.server` in this folder, then open <http://localhost:8000>.
