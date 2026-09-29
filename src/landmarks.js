@@ -149,7 +149,7 @@ export function buildLandmarks(scene, smoke) {
     });
     add(new THREE.BoxGeometry(11.5, 1.6, 2.6), ruinStone, -4.95, 12.8, -11.95, ruin).rotation.y = 0.39; // lintel on two columns
     add(new THREE.CylinderGeometry(1.2, 1.9, 12, 8).translate(0, 6, 0), paint(0x6b4a2e), 0, 0, 0, ruin);
-    add(blobCanopy(), paint(0x5f9e45, {}, { wind: true }), 0, 16, 0, ruin).scale.setScalar(8);
+    add(blobCanopy(), paint(0x5f9e45, { vertexColors: true }, { wind: true }), 0, 16, 0, ruin).scale.setScalar(8);
     for (let i = 0; i < 10; i++) {
       const a = (i / 10) * Math.PI * 2 + Math.random() * 0.4, r = 33 + Math.random() * 4;
       add(new THREE.ConeGeometry(0.5, 8 + Math.random() * 10, 4).rotateX(Math.PI), paint(0x5b6b3a), Math.cos(a) * r, -8, Math.sin(a) * r, ruin);

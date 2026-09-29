@@ -196,7 +196,7 @@ function pineVale(x, z) {
   h = -35 + (h + 35) * smooth(1.05, 1.15, Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz));
   if (u < V.fall) { // river + plunge pool (the river channel stops inside the pool, clear of the cliff)
     const P = VALE_POOL, d = Math.min(u < P.u ? Math.abs(v - valeRiver(u)) - valeRiverWidth(u) : Infinity, Math.hypot(u - P.u, v) - P.r);
-    h = Math.min(h, -9 + (h + 9) * smooth(-6, 12, d));
+    h = Math.min(h, -14 + (h + 14) * smooth(-6, 12, d)); // deep enough to read as dark river water, not a shallow
   }
   if (u > V.fall - 25) { // the stream's bed on the hanging valley, fading into the head wall where it springs
     const cut = 56.5 + (h - 56.5) * smooth(8, 20, Math.abs(v));
@@ -374,7 +374,7 @@ export function buildWorld(scene) {
     }
   const sand = new THREE.Color(0xe2cf9e), grassA = new THREE.Color(0xa8d060), grassB = new THREE.Color(0x5c9a46);
   const rock = new THREE.Color(0x8e8878), snow = new THREE.Color(0xf4f6f8), fern = new THREE.Color(0x7cc653), jungle = new THREE.Color(0x3a8a3c);
-  const shingle = new THREE.Color(0x6f7468), slate = new THREE.Color(0x565c64), mossA = new THREE.Color(0x4f7d58), mossB = new THREE.Color(0x284f46);
+  const tmp = new THREE.Color(), shingle = new THREE.Color(0x6f7468), slate = new THREE.Color(0x565c64), mossA = new THREE.Color(0x4f7d58), mossB = new THREE.Color(0x284f46);
   for (let j = 0, v = 0; j <= SEGZ; j++)
     for (let i = 0; i <= SEGX; i++, v++) {
       const x = X0 + i * CELL, z = Z0 + j * CELL, h = H[v];
@@ -382,17 +382,40 @@ export function buildWorld(scene) {
       const s = Math.hypot(H[v + (i < SEGX ? 1 : 0)] - H[v - (i > 0 ? 1 : 0)], H[v + (j < SEGZ ? RS : 0)] - H[v - (j > 0 ? RS : 0)]) / (2 * CELL);
       const n = fbm(x * 0.01, z * 0.01), tropic = x > HALF && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) < 1.05;
       const [vu, vv] = valeUV(x, z), vale = !tropic && x > 5350 && vu > -250 && vu < 2300 && Math.abs(vv) < 880;
+      // Materials blend over short ranges with a fine (~20 m) noise on the thresholds, so rock, snow and beach
+      // edges come out ragged instead of following the grid in hard bands
+      const nz = noise(x * 0.045 + 13, z * 0.045 - 7) - 0.5, beach = 1 - smooth(2.4, 3.4, h + nz * 0.8);
       if (vale) { // Pine Vale: grey shingle banks, moss-dark meadows and slopes, slate crags and summits
-        if (h < 2.5) col.copy(shingle);
-        else if (s > 1.45 || h > 320 + n * 40) col.copy(slate).lerp(mossB, s > 1.45 ? 0.15 : 0.35);
-        else col.copy(mossA).lerp(mossB, smooth(0.3, 0.7, n + h / 400));
-      } else if (h < 2.5) col.copy(sand);
-      else if (tropic) col.copy(s > 0.9 ? rock : fern).lerp(jungle, s > 0.9 ? 0.35 : smooth(0.3, 0.7, n + h / 500)); // lush volcanic island, rock only on cliffs
-      else if (h > 250 + n * 60) col.copy(snow);
-      else if (h > 140 + n * 40 || s > 0.75) col.copy(rock);
-      else col.copy(grassA).lerp(grassB, smooth(0.35, 0.65, n));
+        col.copy(mossA).lerp(mossB, smooth(0.3, 0.7, n + h / 400));
+        col.lerp(tmp.copy(slate).lerp(mossB, 0.25), Math.max(smooth(1.3, 1.6, s + nz * 0.3), smooth(-20, 20, h - 320 - n * 40 + nz * 30)));
+        col.lerp(shingle, beach);
+      } else if (tropic) { // lush volcanic island, rock only on cliffs
+        col.copy(fern).lerp(jungle, smooth(0.3, 0.7, n + h / 500));
+        col.lerp(tmp.copy(rock).lerp(jungle, 0.35), smooth(0.8, 1.0, s + nz * 0.25));
+        col.lerp(sand, beach);
+      } else {
+        col.copy(grassA).lerp(grassB, smooth(0.35, 0.65, n));
+        col.lerp(rock, Math.max(smooth(-12, 12, h - 140 - n * 40 + nz * 25), smooth(0.66, 0.84, s + nz * 0.2))); // old lines: h > 140 + 40n, s > 0.75
+        col.lerp(snow, smooth(-11, 11, h - 250 - n * 60 + nz * 25)); // old line: h > 250 + 60n
+        col.lerp(sand, beach);
+      }
+      if (h > 0) col.multiplyScalar(1 - 0.26 * beach * (1 - smooth(0.1, 1.3, h))); // wet sand / shingle at the waterline
       col.toArray(colors, v * 3);
     }
+  // Baked relief shading: hollows (gullies, valley floors, the foot of slopes) a little darker, ridges and
+  // crests a little lighter, from how far each node sits below the mean of its neighbours at two scales
+  {
+    const at = (i, j) => Math.max(0, H[Math.min(SEGZ, Math.max(0, j)) * RS + Math.min(SEGX, Math.max(0, i))]);
+    for (let j = 0, v = 0; j <= SEGZ; j++)
+      for (let i = 0; i <= SEGX; i++, v++) {
+        const h = H[v];
+        if (h <= 0) continue;
+        const near = (at(i - 3, j) + at(i + 3, j) + at(i, j - 3) + at(i, j + 3)) / 4 - h;
+        const far = (at(i - 10, j) + at(i + 10, j) + at(i, j - 10) + at(i, j + 10) + at(i - 7, j - 7) + at(i + 7, j - 7) + at(i - 7, j + 7) + at(i + 7, j + 7)) / 8 - h;
+        const k = Math.min(1.1, Math.max(0.7, 1 - near * 0.018 - far * 0.0045));
+        colors[v * 3] *= k; colors[v * 3 + 1] *= k; colors[v * 3 + 2] *= k;
+      }
+  }
   const staging = new THREE.BufferGeometry();
   staging.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   staging.setIndex(new THREE.BufferAttribute(fullIdx, 1));
@@ -423,7 +446,10 @@ export function buildWorld(scene) {
       else cHalf.push(A, C, B, C, D, B); // coarse cell, same diagonal direction as full res
     }
   const idxFull = new THREE.BufferAttribute(Uint16Array.from(cFull), 1), idxHalf = new THREE.BufferAttribute(Uint16Array.from(cHalf), 1);
-  const terrain = new THREE.Group();
+  const terrain = new THREE.Group(), chunkColors = []; // (colour buffer, first node) per chunk, re-filled after the forest shading
+  const fillChunk = (cc, ci, cj) => {
+    for (let j = 0, k = 0; j <= CHUNK; j++) for (let i = 0; i <= CHUNK; i++, k += 3) { const v = ((cj + j) * RS + ci + i) * 3; cc.set(colors.subarray(v, v + 3), k); }
+  };
   for (let cj = 0; cj < SEGZ; cj += CHUNK)
     for (let ci = 0; ci < SEGX; ci += CHUNK) {
       const n = CR * CR, cp = new Float32Array(n * 3), cn = new Float32Array(n * 3), cc = new Float32Array(n * 3);
@@ -432,12 +458,13 @@ export function buildWorld(scene) {
           const v = ((cj + j) * RS + ci + i) * 3;
           cp.set(positions.subarray(v, v + 3), k);
           cn.set(normals.subarray(v, v + 3), k);
-          cc.set(colors.subarray(v, v + 3), k);
         }
+      fillChunk(cc, ci, cj);
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(cp, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(cn, 3));
-      g.setAttribute('color', new THREE.BufferAttribute(cc, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(cc, 3)); // not uploaded until the first render, after the re-fill
+      chunkColors.push({ cc, ci, cj });
       g.setIndex(idxFull);
       g.computeBoundingSphere();
       const m = new THREE.Mesh(g, terrainMat);
@@ -450,10 +477,13 @@ export function buildWorld(scene) {
   const heightTex = new THREE.DataTexture(H, SEGX + 1, SEGZ + 1, THREE.RedFormat, THREE.FloatType);
   heightTex.needsUpdate = true;
   const colorData = new Uint8Array(NV * 4);
-  for (let v = 0; v < NV; v++) {
-    col.fromArray(colors, v * 3).convertLinearToSRGB();
-    colorData.set([col.r * 255, col.g * 255, col.b * 255, 255], v * 4);
-  }
+  const bakeColorTex = () => {
+    for (let v = 0; v < NV; v++) {
+      col.fromArray(colors, v * 3).convertLinearToSRGB();
+      colorData.set([col.r * 255, col.g * 255, col.b * 255, 255], v * 4);
+    }
+  };
+  bakeColorTex();
   const colorTex = new THREE.DataTexture(colorData, SEGX + 1, SEGZ + 1);
   colorTex.colorSpace = THREE.SRGBColorSpace;
   colorTex.magFilter = colorTex.minFilter = THREE.LinearFilter;
@@ -683,13 +713,24 @@ export function buildWorld(scene) {
   const MAX = 3000, TCH = 1000, TNX = WX / TCH, TNZ = WZ / TCH; // 1 km chunks: quarter the draw calls of 500 m, still culls under the ~2–3 km fog
   const kinds = {
     trunks: { geo: new THREE.CylinderGeometry(0.25, 0.35, 1, 6).translate(0, 0.5, 0), mat: paint(0x6b4a2e) },
-    rounds: { geo: blobCanopy(), mat: paint(0xffffff, {}, { wind: true }) },
-    pines: { geo: tieredPine(), mat: paint(0xffffff, {}, { wind: true }) },
-    spruces: { geo: spruce(), mat: paint(0xffffff, {}, { wind: true }) },
+    rounds: { geo: blobCanopy(), mat: paint(0xffffff, { vertexColors: true }, { wind: true }) },
+    pines: { geo: tieredPine(), mat: paint(0xffffff, { vertexColors: true }, { wind: true }) },
+    spruces: { geo: spruce(), mat: paint(0xffffff, { vertexColors: true }, { wind: true }) },
   };
   const chunks = new Map();
   let nT = 0;
+  // Canopy footprints splatted onto the height grid: the ground under woods (and under a lone tree) is shaded darker
+  const shade = new Float32Array(NV), canopyR = { rounds: 1.2, pines: 1, spruces: 0.5 };
+  const splat = (x, z, r) => {
+    const R = r + CELL, gi = (x - X0) / CELL, gj = (z - Z0) / CELL, n = Math.ceil(R / CELL);
+    for (let j = Math.max(0, Math.round(gj) - n); j <= Math.min(SEGZ, Math.round(gj) + n); j++)
+      for (let i = Math.max(0, Math.round(gi) - n); i <= Math.min(SEGX, Math.round(gi) + n); i++) {
+        const d = Math.hypot(i - gi, j - gj) * CELL;
+        if (d < R) shade[j * RS + i] += 1 - d / R;
+      }
+  };
   const record = (kind, x, z, y, sx, sy, sz, ry = 0, color = null) => {
+    if (canopyR[kind]) splat(x, z, sx * canopyR[kind]);
     const ci = Math.min(TNX - 1, Math.max(0, Math.floor((x - X0) / TCH))), cj = Math.min(TNZ - 1, Math.max(0, Math.floor((z - Z0) / TCH)));
     const key = cj * TNX + ci;
     if (!chunks.has(key)) chunks.set(key, { trunks: [], rounds: [], pines: [], spruces: [] });
@@ -764,6 +805,10 @@ export function buildWorld(scene) {
     addObstacle(x, z, H * 0.14, h + H);
     n++;
   }
+  for (let v = 0; v < NV; v++) if (shade[v] > 0) { const k = 1 - 0.3 * Math.min(1, shade[v]); colors[v * 3] *= k; colors[v * 3 + 1] *= k; colors[v * 3 + 2] *= k; }
+  for (const { cc, ci, cj } of chunkColors) fillChunk(cc, ci, cj);
+  bakeColorTex();
+  colorTex.needsUpdate = true;
   for (const chunk of chunks.values())
     for (const [kind, list] of Object.entries(chunk)) {
       if (!list.length) continue;
@@ -962,6 +1007,20 @@ export function blobCanopy() {
     w.set(n.getX(i), n.getY(i), n.getZ(i)).multiplyScalar(0.4).addScaledVector(v, 0.6).normalize();
     n.setXYZ(i, w.x, w.y, w.z);
   }
+  return canopyShade(g, (y) => 0.6 + 0.4 * smooth(-0.9, 1.3, y)); // self-shaded: dark underneath, light crown
+}
+
+// Baked canopy light as a vertex colour (the instance tint multiplies it): brighter up the tree, darker toward
+// the trunk, and much darker on downward faces (the undersides of pine and spruce tiers)
+function canopyShade(g, height, core = 0) {
+  const p = g.attributes.position, n = g.attributes.normal, c = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    let k = height(p.getY(i));
+    if (core) k *= 0.8 + 0.2 * Math.min(1, Math.hypot(p.getX(i), p.getZ(i)) / core);
+    if (n.getY(i) < -0.3) k *= 0.7;
+    c.fill(k, i * 3, i * 3 + 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
   return g;
 }
 
@@ -982,14 +1041,14 @@ function spruce() {
   tiers.push(new THREE.ConeGeometry(0.04, 0.1, 5).translate(0, 1.0, 0).toNonIndexed());
   const g = mergeGeometries(tiers);
   g.computeVertexNormals();
-  return g;
+  return canopyShade(g, (y) => 0.62 + 0.4 * y, 0.3);
 }
 
 // Pine: three stacked cones, unit height
 function tieredPine() {
-  return mergeGeometries([
+  return canopyShade(mergeGeometries([
     new THREE.ConeGeometry(1, 0.5, 8).translate(0, 0.25, 0),
     new THREE.ConeGeometry(0.78, 0.45, 8).translate(0, 0.5, 0),
     new THREE.ConeGeometry(0.55, 0.4, 8).translate(0, 0.8, 0),
-  ]);
+  ]), (y) => 0.62 + 0.4 * y, 0.5);
 }

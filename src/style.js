@@ -32,7 +32,7 @@ export const TIMES = {
     label: 'Twilight', sun: [-1, 0.13, 0.02], fog: 0.0007, stars: 1, glowPow: 2.2, glowAmt: 0.95,
     zenith: 0x10283f, mid: 0x2f6f82, horizon: 0x6f9fa4, glow: 0xffc66e, sunDisc: 0xfff4d0, distTint: 0x4f7896,
     sunLight: 0xffbe7a, sunI: 2.0, hemiSky: 0x6f98b4, hemiGround: 0x2c4238, hemiI: 0.9,
-    cloudTop: 0x8fbfd0, cloudBase: 0x2f4a66, cloudWarm: 0xffa66a,
+    cloudTop: 0xc6dde6, cloudBase: 0x5a6f92, cloudWarm: 0xffb27a, // blue-violet bases: the gold haze turned darker ones brown
     ramp: [rgb(0.3, 0.46, 0.66), rgb(0.82, 0.86, 0.88), rgb(1.3, 1.0, 0.72)],
   },
 };
@@ -166,12 +166,29 @@ const RAMP = /* glsl */ `
   outgoingLight = diffuseColor.rgb * tint + totalEmissiveRadiance;
   #include <opaque_fragment>`;
 
-// Fine colour mottling in world space so large surfaces don't look flat up close
+// Fine colour mottling in world space so large surfaces don't look flat up close; on nearby cliffs, rock strata.
+// The strata only appear on faces steeper than ~55-65° (screen-space derivative normal), within ~500-900 m, in
+// patches; layers vary in thickness and tone, some pinch out or are missing, and each area dips its own way.
 const MOTTLE = /* glsl */ `
   #include <color_fragment>
   #ifdef USE_FOG
     float mot = vnoise(vFogWorld.xz * 0.11) * 0.6 + vnoise(vFogWorld.xz * 0.43) * 0.4;
     diffuseColor.rgb *= 0.86 + 0.26 * mot;
+    vec3 faceN = normalize(cross(dFdx(vFogWorld), dFdy(vFogWorld)));
+    float cliff = smoothstep(0.42, 0.58, 1.0 - abs(faceN.y))                       // cliffs, not mountain flanks
+                * (1.0 - smoothstep(0.35, 0.6, max(diffuseColor.r, diffuseColor.b)))   // rock, not snow
+                * (1.0 - smoothstep(500.0, 900.0, length(vFogWorld - cameraPosition))); // gone before they'd alias
+    if (cliff > 0.0) {
+      vec2 q = vFogWorld.xz;
+      cliff *= smoothstep(0.2, 0.45, vnoise(q * 0.004 + 17.0));                     // some faces plain rock
+      float y = vFogWorld.y + (vnoise(q * 0.0025 + 5.3) - 0.5) * 60.0;               // regional dip, up to ~12°
+      float layer = (y * 0.55 + vnoise(q * 0.01) * 6.0) / 6.2831, id = floor(layer), f = fract(layer);
+      float thick = 0.2 + 0.55 * hash12(vec2(id, 7.0));                              // thick and thin beds
+      float band = smoothstep(0.0, 0.1, f) * (1.0 - smoothstep(thick, thick + 0.1, f))
+                 * step(0.3, hash12(vec2(id, 3.0)))                                  // some beds missing
+                 * smoothstep(0.2, 0.5, vnoise(q * 0.02 + id * 3.1));                // and pinching out along the face
+      diffuseColor.rgb *= 1.0 + cliff * band * ((hash12(vec2(id, 11.0)) - 0.5) * 0.28 - 0.07); // darker or paler beds
+    }
   #endif`;
 
 // Gentle sway, phase varies per instance; amplitude grows with height in the canopy
@@ -243,7 +260,8 @@ export function skyMaterial() {
                  * smoothstep(0.05, 0.35, d.y) * (1.0 - smoothstep(0.2, 0.8, s)) * (1.0 - cirrus * 1.6);
           }
         }
-        col = mix(col, uSunDisc, smoothstep(0.9990, 0.9994, s));
+        col += uSunDisc * pow(s, 2500.0) * 0.5 + uGlow * pow(s, 350.0) * 0.3; // soft halo around a smaller disc
+        col = mix(col, uSunDisc, smoothstep(0.99975, 0.99985, s));
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
       }`,
