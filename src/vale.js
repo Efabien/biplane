@@ -228,7 +228,7 @@ export function buildVale(scene, smoke) {
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
         gl_PointSize = uOn > 0.0 ? max(2.0, 0.35 * uScale / -mv.z) : 0.0;
-        vA = uOn * pow(0.5 + 0.5 * sin(uTime * (0.8 + fract(aPh) * 1.2) + aPh), 3.0) * (1.0 - smoothstep(250.0, 500.0, -mv.z));
+        vA = uOn * pow(max(0.0, 0.5 + 0.5 * sin(uTime * (0.8 + fract(aPh) * 1.2) + aPh)), 3.0) * (1.0 - smoothstep(250.0, 500.0, -mv.z));
       }`,
     fragmentShader: /* glsl */ `
       varying float vA;

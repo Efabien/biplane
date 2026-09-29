@@ -293,7 +293,7 @@ function makeBeacon() {
       varying float vY;
       varying float vD;
       void main() {
-        float a = pow(1.0 - vY, 1.6) * (0.28 + 0.07 * sin(uTime * 2.0)) * smoothstep(40.0, 160.0, vD);
+        float a = pow(max(1.0 - vY, 0.0), 1.6) * (0.28 + 0.07 * sin(uTime * 2.0)) * smoothstep(40.0, 160.0, vD);
         gl_FragColor = vec4(1.0, 0.78, 0.35, a);
       }`,
   });

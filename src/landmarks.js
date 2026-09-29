@@ -20,7 +20,7 @@ export function buildLandmarks(scene, smoke) {
   const beamMat = new THREE.ShaderMaterial({ // bright at the lamp, fading out along the beam (uv.y = 1 at the apex)
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     vertexShader: 'varying float vK; void main() { vK = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: 'varying float vK; void main() { gl_FragColor = vec4(vec3(1.0, 0.88, 0.62) * pow(vK, 1.8) * 0.4, 1.0); }',
+    fragmentShader: 'varying float vK; void main() { gl_FragColor = vec4(vec3(1.0, 0.88, 0.62) * pow(max(vK, 0.0), 1.8) * 0.4, 1.0); }', // clamped: at the rim vK interpolates a hair below 0, and pow() of that is NaN (a dark ring)
   });
   const beamGeo = new THREE.ConeGeometry(9, 160, 16, 1, true).translate(0, -80, 0).rotateZ(Math.PI / 2); // apex at the lamp, opening outward along +x
   const lamp = { beams: new THREE.Group(), room: null }, seaLamp = { beams: new THREE.Group(), room: null };
