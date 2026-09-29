@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { STRIPS, LIGHTHOUSE, CASTLE, VOLCANO } from './world.js';
+import { STRIPS, LIGHTHOUSE, CASTLE, VOLCANO, SEAFORT, SEA_LIGHT, VALE, VALE_CABINS, valeUV, valeXZ } from './world.js';
 import { paint } from './style.js';
 
 // Adventure mode, "Island Air Mail": cosy chapters of deliveries. No timers and no failing: a crash just puts you
@@ -9,6 +9,9 @@ const SAVE_KEY = 'biplane.adventure.v1';
 const strip = (name) => STRIPS.find((s) => s.name === name);
 const home = (name, dir) => ({ strip: strip(name), dir });
 const RIM_GAP = { x: VOLCANO.x + VOLCANO.bx * 700, z: VOLCANO.z + VOLCANO.bz * 700 };
+// Pine Vale landmarks: the cabin nearest a distance up the valley, and the pool in front of the waterfall
+const cabin = (u) => { const c = VALE_CABINS.reduce((a, b) => (Math.abs(valeUV(b.x, b.z)[0] - u) < Math.abs(valeUV(a.x, a.z)[0] - u) ? b : a)); return { x: c.x, z: c.z }; };
+const [fallX, fallZ] = valeXZ(VALE.fall - 160, 0);
 
 // Villagers: shirt, trousers, hat colour + hat style ('straw' | 'cap' | 'bun')
 const PEOPLE = {
@@ -17,9 +20,15 @@ const PEOPLE = {
   juniper: { name: 'Juniper', shirt: 0x3f8c80, legs: 0x3f8c80, hat: 0x5a3a26, style: 'bun' },
   ada: { name: 'Granny Ada', shirt: 0x8a5a9a, legs: 0x8a5a9a, hat: 0xd8d4cc, style: 'bun' },
   bram: { name: 'Bram', shirt: 0x6b7a3a, legs: 0x4a4038, hat: 0x4a5a2a, style: 'cap' },
+  nell: { name: 'Nell', shirt: 0xe0a33a, legs: 0x3f6f8a, hat: 0xf2e8cc, style: 'straw' },
+  hilde: { name: 'Hilde', shirt: 0x9a3a2e, legs: 0x3a3a3a, hat: 0x2e4a3a, style: 'cap' },
+  // only ever met from the air (parcels are dropped to them)
+  garrison: { name: 'The sea fort' }, oskar: { name: 'Oskar' }, lindqvists: { name: 'The Lindqvists' }, per: { name: 'Old Per' }, wren: { name: 'Wren' },
 };
 
-// Steps: 'land' (deliver to `who`), 'pickup' (`who` loads the plane), 'pass' (fly near a point), 'circle' (loop around it).
+// Steps: 'land' (deliver to `who`), 'pickup' (`who` loads the plane), 'pass' (fly near a point), 'circle' (loop around it),
+// 'drop' (fly over a point within `r`, lower than `agl` metres above the ground or sea: a parcel floats down on a parachute;
+// `deck` = a platform it can land on, e.g. the sea fort's).
 // `say` is the card after a step; the last step's card is the mission's `thanks`. `flag` is set when the step is done.
 const CHAPTERS = [
   {
@@ -116,6 +125,61 @@ const CHAPTERS = [
       },
     ],
   },
+  {
+    title: 'Letters to the Vale',
+    intro: 'Far out in the north-east, past the sea stacks, there is a valley so thick with spruce it looks black from the air. Settlers have built log cabins along its river, and not one letter has reached them.\n\nSome of this post goes where no plane can land. Fly low over the spot and let the parcel go: it floats down on a little parachute.',
+    final: {
+      title: 'Mail Pilot of the Far Isles',
+      body: 'The Pine Vale has a post round now: fort, light, atoll, and every cabin up the river.\n\nOn still evenings the settlers leave their lamps in the windows, so the mail plane can find its way home up the valley.',
+    },
+    missions: [
+      {
+        title: 'The Sea Fort\'s Post',
+        start: home('Headland', -1),
+        brief: 'Juniper hands you the first sack for the far north-east. "The old route goes by the sea fort. The garrison hasn\'t had letters in weeks. Then Nell on the atoll knows the way."\n\nThe fort stands in open water, west of here. Fly low over it and drop the post, then land on the Atoll sandbar.',
+        steps: [
+          { type: 'drop', label: 'Drop the post on the sea fort', x: SEAFORT.x, z: SEAFORT.z, r: 90, agl: 70, deck: { r: 13.5, y: 13 }, who: 'garrison', say: 'A soldier on the ramparts waves both arms: post received. Then he points east. On to the atoll.' },
+          { type: 'land', strip: 'Atoll sandbar', who: 'nell' },
+        ],
+        thanks: '"Post, out here?" Nell shades her eyes against the glare off the lagoon. "Then you\'ll be wanting the Pine Vale. North, past the stacks. Can\'t miss it: the whole island\'s one big forest."',
+      },
+      {
+        title: 'The Offshore Light',
+        start: home('Atoll sandbar', 1),
+        brief: 'Nell has a basket of smoked fish for Oskar, keeper of the offshore light on the shoal to the west. "He\'s got no landing, mind. You\'ll have to drop it."\n\nThen thread the sea stacks and land at the new strip in the Pine Vale.',
+        steps: [
+          { type: 'drop', label: 'Drop the basket at the offshore light', x: SEA_LIGHT.x, z: SEA_LIGHT.z, r: 90, agl: 60, deck: { r: 7.4, y: 6.5 }, who: 'oskar', say: 'Oskar has the basket before the wind can take it, and waves his cap. Now north, through the stacks.' },
+          { type: 'pass', label: 'Thread the sea stacks', x: 6080, z: 720, r: 160 },
+          { type: 'land', strip: 'Pine Vale', who: 'hilde' },
+        ],
+        thanks: 'Hilde leans on her axe. "A mail plane! We\'d given up." She was the first to build here, down by the river mouth. "The others are further up the valley. They\'ll never believe it."',
+      },
+      {
+        title: 'Cabin Rounds',
+        start: home('Pine Vale', -1),
+        brief: 'Hilde sorts the sack on a stump: a parcel for the Lindqvists by the river mouth, one for old Per in the middle of the valley, and one for the cabin that looks out at the waterfall.\n\nNone of them has a landing strip. Drop each parcel low over its cabin, then come back to the strip.',
+        steps: [
+          { type: 'drop', label: 'Drop to the Lindqvists\' cabin', ...cabin(150), r: 70, agl: 50, who: 'lindqvists', say: 'Two children race out of the cabin after the parachute before it even touches down.' },
+          { type: 'drop', label: 'Drop to old Per\'s cabin', ...cabin(880), r: 70, agl: 50, who: 'per', say: 'Old Per is on his porch and catches it, first time, without getting up. Now the cabin by the waterfall.' },
+          { type: 'drop', label: 'Drop to the cabin by the falls', ...cabin(1170), r: 70, agl: 50, who: 'wren' },
+          { type: 'land', strip: 'Pine Vale', who: 'hilde' },
+        ],
+        thanks: '"Per says it\'s the first letter he\'s had in eleven years." Hilde grins. "And Wren from the falls cabin has gone up to her lookout above the waterfall, to paint. She\'s asked for her lantern."',
+      },
+      {
+        title: 'Lantern above the Falls',
+        start: home('Pine Vale', -1),
+        time: 'twilight',
+        brief: 'Last light in the Pine Vale. Wren is painting at her lookout cabin on the ledge above the waterfall, and she\'ll need her lantern to find the path down.\n\nFly up the valley toward the falls, climb over the cliff and drop the lantern at the lookout, then come back down to land.',
+        steps: [
+          { type: 'pass', label: 'Fly up the valley to the waterfall', x: fallX, z: fallZ, r: 140 },
+          { type: 'drop', label: 'Drop the lantern at the lookout', ...cabin(1480), r: 70, agl: 50, who: 'wren', say: 'A little light bobs along the ledge, then stops and waves. Wren has her lantern. Back down the valley to land.' },
+          { type: 'land', strip: 'Pine Vale', who: 'hilde' },
+        ],
+        thanks: 'Hilde has a fire going outside her cabin. Up the valley, one by one, the cabin windows glow in the dusk, and high above the waterfall a lantern twinkles back.',
+      },
+    ],
+  },
 ];
 const TOTAL = CHAPTERS.reduce((n, c) => n + c.missions.length, 0);
 
@@ -125,6 +189,8 @@ function load() {
   try { s = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch { /* unreadable: start fresh */ }
   s ??= {};
   if (s.chapter === undefined) s = s.done ? { chapter: 1, mission: 0 } : { chapter: 0, mission: s.mission ?? 0 }; // saves from before chapters
+  // finished every chapter there was (`through`; 2 before it was saved): newer chapters unlock instead of starting over
+  if (s.done && (s.through ?? 2) < CHAPTERS.length) s = { ...s, chapter: s.through ?? 2, mission: 0, done: false };
   return { chapter: 0, mission: 0, done: false, flags: {}, ...s };
 }
 const store = (s) => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* private window: progress lasts this session */ } };
@@ -181,6 +247,33 @@ function makeParcel(item) {
   return g;
 }
 
+// A parcel hanging under a small striped parachute (for drops); the canopy opens out once it's clear of the plane
+function makeChute() {
+  const g = new THREE.Group(), canopy = new THREE.Group(), cloth = paint(0xffffff, { side: THREE.DoubleSide }), cord = paint(0x3a3228);
+  const parcel = makeParcel();
+  g.add(parcel);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.42).toNonIndexed(), cloth);
+  const p = dome.geometry.attributes.position, stripe = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i += 3) { // eight gores, alternating red and cream, one solid colour per triangle
+    const a = Math.atan2(p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2), p.getX(i) + p.getX(i + 1) + p.getX(i + 2));
+    const c = Math.floor(((a + Math.PI) / (Math.PI * 2)) * 8) % 2 ? [0.75, 0.12, 0.08] : [0.92, 0.88, 0.78];
+    for (let k = 0; k < 3; k++) stripe.set(c, (i + k) * 3);
+  }
+  dome.geometry.setAttribute('color', new THREE.BufferAttribute(stripe, 3));
+  cloth.vertexColors = true;
+  dome.position.y = 1.3;
+  canopy.add(dome);
+  for (let k = 0; k < 4; k++) { // shroud lines from the canopy rim down to the parcel
+    const a = (k / 4) * Math.PI * 2 + Math.PI / 4, line = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.9, 4), cord);
+    line.position.set(Math.cos(a) * 0.45, 1.05, Math.sin(a) * 0.45);
+    line.rotation.set(Math.sin(a) * 0.45, 0, -Math.cos(a) * 0.45);
+    canopy.add(line);
+  }
+  g.add(canopy);
+  g.traverse((o) => { o.castShadow = true; });
+  return { g, canopy };
+}
+
 // Soft gold column marking the current objective, visible through the haze, fading near the top and up close
 function makeBeacon() {
   const mat = new THREE.ShaderMaterial({
@@ -214,6 +307,7 @@ function makeBeacon() {
 // onFlags(flags) is told whenever the world changes (lighthouse lit, new scarf)
 export function createAdventure({ scene, world, flight, fly, setTime, onFlags }) {
   let mode = 'off', chapter = 0, mission = 0, step = 0, act = null, onCard = null, circle = null;
+  let drop = null; const dropped = []; // the parcel falling for the current drop step; parcels lying where they came down
   let flags = load().flags;
   const beacon = makeBeacon();
   scene.add(beacon);
@@ -245,6 +339,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
     if (mode !== 'fly') return null;
     const s = S();
     if (s.type === 'pass') return { label: s.label, x: s.x, z: s.z };
+    if (s.type === 'drop') return { label: drop ? 'Parcel away!' : `${s.label} · below ${s.agl} m`, x: s.x, z: s.z };
     if (s.type === 'circle') return { label: `${s.label} · ${Math.round(Math.min(1, Math.abs(circle?.acc ?? 0) / (Math.PI * 2)) * 100)}%`, x: s.x, z: s.z };
     const st = strip(s.strip), who = PEOPLE[s.who].name;
     return { label: s.type === 'pickup' ? `Collect from ${who} · ${st.name}` : `Deliver to ${who} · ${st.name}`, x: st.x, z: st.z };
@@ -257,6 +352,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
   };
 
   function brief() {
+    clearDrops();
     mode = 'brief';
     step = 0;
     circle = null;
@@ -284,7 +380,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
     }
     // mission complete: save where to pick up next time
     const lastInChapter = mission === C().missions.length - 1, lastChapter = chapter === CHAPTERS.length - 1;
-    const next = !lastInChapter ? { chapter, mission: mission + 1, done: false } : !lastChapter ? { chapter: chapter + 1, mission: 0, done: false } : { chapter: 0, mission: 0, done: true };
+    const next = !lastInChapter ? { chapter, mission: mission + 1, done: false } : !lastChapter ? { chapter: chapter + 1, mission: 0, done: false } : { chapter: 0, mission: 0, done: true, through: CHAPTERS.length };
     store({ ...next, flags });
     mode = 'card';
     const who = PEOPLE[s.who];
@@ -352,6 +448,48 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
     v.armR.rotation.z = wave;
   }
 
+  // ---- drops: the parcel leaves the plane with its speed, the chute opens and slows it to a gentle drift down ----
+  const _ = new THREE.Vector3();
+  function startDrop() {
+    const c = makeChute();
+    c.g.position.copy(flight.pos).add(_.set(0, -1.2, 0));
+    c.canopy.scale.setScalar(0.05);
+    scene.add(c.g);
+    drop = { ...c, vel: flight.vel.clone().multiplyScalar(0.8), t: 0, deck: S().deck, at: S() };
+  }
+  function updateDrops(dt) {
+    if (drop) {
+      const d = drop, g = d.g;
+      d.t += dt;
+      const open = THREE.MathUtils.smoothstep(d.t, 0.3, 1.1);
+      d.canopy.scale.setScalar(0.05 + open * 0.95);
+      const k = 1 - Math.exp(-dt * (0.4 + open * 2.2));
+      d.vel.x -= d.vel.x * k; d.vel.z -= d.vel.z * k;
+      if (open < 0.5) d.vel.y -= 9.8 * dt; // free fall until the chute bites, then its steady sink
+      else d.vel.y += (-5 - d.vel.y) * (1 - Math.exp(-dt * 3));
+      g.position.addScaledVector(d.vel, dt);
+      g.rotation.y += dt * 0.6;
+      g.rotation.z = Math.sin(d.t * 1.7) * 0.12 * open; // gentle swing under the canopy
+      let floor = Math.max(world.groundAt(g.position.x, g.position.z), 0); // ground, or the sea, or the landmark's deck
+      if (d.deck && Math.hypot(g.position.x - d.at.x, g.position.z - d.at.z) < d.deck.r) floor = d.deck.y;
+      if (g.position.y <= floor + 0.2) {
+        g.position.y = floor + 0.2;
+        g.rotation.z = 0;
+        d.canopy.scale.set(1, 0.25, 1); // the chute collapses over the parcel
+        dropped.push({ g, t: 0 });
+        drop = null;
+        if (mode === 'fly' && S().type === 'drop') stepDone();
+      }
+    }
+    for (let i = dropped.length - 1; i >= 0; i--) if ((dropped[i].t += dt) > 20) { scene.remove(dropped[i].g); dropped.splice(i, 1); }
+  }
+  function clearDrops() {
+    if (drop) scene.remove(drop.g);
+    for (const d of dropped) scene.remove(d.g);
+    drop = null;
+    dropped.length = 0;
+  }
+
   function clearAct() {
     if (!act) return;
     scene.remove(act.v.g, act.parcel);
@@ -384,6 +522,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
       card.hidden = true;
       onCard = null;
       clearAct();
+      clearDrops();
       beacon.visible = false;
       setTime(null);
     },
@@ -397,6 +536,8 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
       if (mode === 'fly') {
         const s = S(), air = flight.state === 'air', dist = Math.hypot(flight.pos.x - s.x, flight.pos.z - s.z);
         if (s.type === 'pass' && air && dist < s.r) stepDone();
+        else if (s.type === 'drop' && air && !drop && dist < s.r
+          && flight.pos.y - Math.max(world.groundAt(flight.pos.x, flight.pos.z), 0) < s.agl) startDrop();
         else if (s.type === 'circle') { // add up the angle swept around the point while inside the ring
           if (air && dist < s.r) {
             const a = Math.atan2(flight.pos.z - s.z, flight.pos.x - s.x);
@@ -409,6 +550,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
           && world.stripAt(flight.pos.x, flight.pos.z) === strip(s.strip)) startScene(s.type);
       }
       if (act) updateScene(dt);
+      if (dt > 0) updateDrops(dt);
     },
     // Scene camera: a slow orbit around the plane and the villager
     shot(camera, dt) {
