@@ -254,6 +254,28 @@ export function slopeAt(x, z) {
   return Math.hypot(groundAt(x + 4, z) - groundAt(x - 4, z), groundAt(x, z + 4) - groundAt(x, z - 4)) / 8;
 }
 
+// Pine Vale log cabins: rough sites on the valley floor (u up the valley, v offset from the river's centreline),
+// each nudged to the nearest flat, dry spot, clear of the strip's approach corridor, and turned to face the water.
+// The forest leaves a clearing around each (the spruce loop), vale.js builds them.
+export const VALE_CABINS = [];
+{
+  const cr = rng(61);
+  const inCorridor = (x, z) => STRIPS.some((st) => Math.abs(across(st, x, z)) < 80 && Math.abs(along(st, x, z)) < st.len / 2 + 790);
+  for (const [u0, dv] of [[150, 50], [330, 70], [760, 95], [880, 125], [1170, 42], [1235, 70], [1480, 45]]) {
+    let best = null;
+    for (let t = 0; t < 80; t++) {
+      const r = t && 6 + cr() * 30, a = cr() * Math.PI * 2, u = u0 + Math.cos(a) * r;
+      const [x, z] = valeXZ(u, valeRiver(u) + dv + Math.sin(a) * r);
+      const h = groundAt(x, z), sl = slopeAt(x, z);
+      if (h < 4 || sl > 0.18 || inCorridor(x, z) || VALE_CABINS.some((c) => Math.hypot(c.x - x, c.z - z) < 40)) continue;
+      if (!best || sl < best.sl) best = { x, z, sl };
+    }
+    if (!best) continue;
+    const [u] = valeUV(best.x, best.z), [rx, rz] = valeXZ(u, u > VALE.fall ? 0 : valeRiver(u));
+    VALE_CABINS.push({ x: best.x, z: best.z, rot: Math.atan2(rx - best.x, rz - best.z) + (cr() - 0.5) * 0.5, w: 4.5 + cr() * 1.8, d: 5.5 + cr() * 2, hgt: 2.6 + cr() * 0.5, r: cr() });
+  }
+}
+
 // ---- obstacle grid (trees, houses, buildings) ----------------------------
 const GCELL = 50, GNX = WX / GCELL, GNZ = WZ / GCELL;
 const grid = Array.from({ length: GNX * GNZ }, () => []);
@@ -485,9 +507,23 @@ export function buildWorld(scene) {
 
     const soft = st.surface !== 'dirt'; // grass and sand strips use raised boards instead of paint
     const yAt = (z) => -z * st.slope;  // local height offset along a sloped strip (local -Z = uphill)
+    // Grass and sand take the colour of the ground around them (averaged over a band just outside the strip,
+    // dry land only), with the terrain's mottling, so each strip reads as the local meadow or beach, mown or raked
+    const ground = new THREE.Color(0, 0, 0);
+    let nG = 0;
+    for (let a = -half - 30; a <= half + 30; a += 6)
+      for (const s of [-1, 1])
+        for (let d = st.w / 2 + 4; d <= st.w / 2 + 24; d += 5) {
+          const [wx, wz] = toWorld(s * d, a), v = Math.round((wz - Z0) / CELL) * RS + Math.round((wx - X0) / CELL);
+          if (H[v] < 0) continue;
+          ground.r += colors[v * 3]; ground.g += colors[v * 3 + 1]; ground.b += colors[v * 3 + 2]; nG++;
+        }
+    ground.multiplyScalar(1 / nG);
+    const tone = (k) => col.copy(ground).multiplyScalar(k).getHex();
+    const surfOpts = { polygonOffset: true, polygonOffsetFactor: -2 };
     const surfMat = st.surface === 'grass'
-      ? paint(0xffffff, { map: stripeTex(0xcfe08a, 0xb4d470, st.len / 12), polygonOffset: true, polygonOffsetFactor: -2 })
-      : paint(st.surface === 'sand' ? 0xeadbb0 : 0xc9b27f, { polygonOffset: true, polygonOffsetFactor: -2 });
+      ? paint(0xffffff, { map: stripeTex(tone(1.08), tone(0.93), st.len / 12), ...surfOpts }, { mottle: true })
+      : st.surface === 'sand' ? paint(tone(1), surfOpts, { mottle: true }) : paint(0xc9b27f, surfOpts);
     const surf = new THREE.Mesh(new THREE.PlaneGeometry(st.w, st.len).rotateX(-Math.PI / 2), surfMat);
     surf.position.y = 0.05;
     surf.rotation.x = Math.atan(st.slope);
@@ -720,7 +756,7 @@ export function buildWorld(scene) {
     if (h < 3.2 || h > 380 || sl > 1.45) continue;
     if (fbm(x * 0.005 + 7, z * 0.005 - 3) < 0.34 + h / 1200 && vr() > 0.12) continue; // clearings, wider up high
     if ((h > 320 || sl > 1.15) && vr() < 0.5) continue;
-    if (!clearOfStrips(x, z)) continue;
+    if (!clearOfStrips(x, z) || VALE_CABINS.some((c) => (c.x - x) ** 2 + (c.z - z) ** 2 < 16 * 16)) continue;
     const H = (11 + vr() * 12) * (h > 250 ? 0.7 : 1);
     record('trunks', x, z, h - 0.3, 1.1 + H * 0.02, H * 0.45, 1.1 + H * 0.02);
     col.setHSL(0.44 + vr() * 0.07, 0.24 + vr() * 0.14, 0.12 + vr() * 0.08, THREE.SRGBColorSpace); // near-black blue-greens

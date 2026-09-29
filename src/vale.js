@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { groundAt, addObstacle, stripAt, VALE, VALE_POOL, valeXZ, valeRiver, valeRiverWidth } from './world.js';
+import { groundAt, addObstacle, stripAt, VALE, VALE_POOL, VALE_CABINS, valeXZ, valeRiver, valeRiverWidth } from './world.js';
 import { paint, time, atmo, pointScale } from './style.js';
 import { AMBIENT_FAR2 } from './smoke.js';
 
 // Pine Vale dressing: the waterfall off the hanging valley and the stream feeding it, boulders in and along
-// the river, spray rising from the plunge pool, and fireflies over the water in the low light.
+// the river, spray rising from the plunge pool, log cabins with smoking chimneys, and fireflies over the water in the low light.
 function rng(seed) {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -53,6 +53,24 @@ function flowMaterial(fall, len) {
   mat.uniforms.uTime = time;
   Object.assign(mat.uniforms, atmo);
   return mat;
+}
+
+// Log walls: round logs stacked in bands, lit on top and shadowed in the seams, notched ends at the corners
+function logTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d'), r = rng(71);
+  for (let i = 0; i < 8; i++) {
+    const grad = g.createLinearGradient(0, i * 8, 0, i * 8 + 8);
+    grad.addColorStop(0, '#5a4330'); grad.addColorStop(0.3, '#b8966c'); grad.addColorStop(0.7, '#8c6a48'); grad.addColorStop(1, '#3a2a1c');
+    g.fillStyle = grad;
+    g.fillRect(0, i * 8, 64, 8);
+    g.fillStyle = 'rgba(40, 28, 18, 0.35)';
+    for (let k = 0; k < 3; k++) g.fillRect(r() * 64, i * 8 + 2 + r() * 4, 4 + r() * 10, 0.8); // grain
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 // A lumpy boulder: jittered icosahedron, faceted
@@ -110,7 +128,8 @@ export function buildVale(scene, smoke) {
 
   // ---- Boulders: midstream rocks breaking the surface, banks, the plunge pool, scree on the valley floor ----
   const rocks = [];
-  const nearStrip = (x, z) => [[0, 0], [25, 0], [-25, 0], [0, 25], [0, -25]].some(([dx, dz]) => stripAt(x + dx, z + dz));
+  const nearStrip = (x, z) => [[0, 0], [25, 0], [-25, 0], [0, 25], [0, -25]].some(([dx, dz]) => stripAt(x + dx, z + dz))
+    || VALE_CABINS.some((c) => (c.x - x) ** 2 + (c.z - z) ** 2 < 12 * 12); // and off the cabins' doorsteps
   const addRock = (u, v, size, sink) => {
     const [x, z] = valeXZ(u, v), g = groundAt(x, z);
     if (nearStrip(x, z)) return;
@@ -136,6 +155,56 @@ export function buildVale(scene, smoke) {
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
   });
+
+  // ---- Log cabins: stacked-log walls, steep shingle roofs, a stone chimney, plank door and porch, a woodpile ----
+  const NCab = VALE_CABINS.length, box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+  const roofGeo = new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1)]), { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
+  const cabin = {
+    walls: new THREE.InstancedMesh(box, paint(0xffffff, { map: logTexture() }), NCab),
+    roofs: new THREE.InstancedMesh(roofGeo, paint(0xffffff), NCab),
+    parts: new THREE.InstancedMesh(box, paint(0xffffff), NCab * 8), // chimney, door, porch, woodpile, ridge, frames
+  };
+  const paneMat = paint(0x26303c, { emissive: 0x0e1218 });
+  cabin.panes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.6, 0.6, 0.14), paneMat, NCab * 3);
+  const chimneys = [];
+  let nPart = 0, nPane = 0;
+  const local = (c, lx, lz) => { const cs = Math.cos(c.rot), sn = Math.sin(c.rot); return [c.x + lx * cs + lz * sn, c.z - lx * sn + lz * cs]; };
+  const part = (c, gy, lx, ly, lz, sx, sy, sz, hex, ry = 0) => {
+    const [x, z] = local(c, lx, lz);
+    dummy.position.set(x, gy + ly, z); dummy.rotation.set(0, c.rot + ry, 0); dummy.scale.set(sx, sy, sz); dummy.updateMatrix();
+    cabin.parts.setMatrixAt(nPart, dummy.matrix);
+    cabin.parts.setColorAt(nPart++, col.setHex(hex));
+  };
+  const pane = (c, gy, lx, ly, lz, ry) => {
+    const [x, z] = local(c, lx, lz);
+    dummy.position.set(x, gy + ly, z); dummy.rotation.set(0, c.rot + ry, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix();
+    cabin.panes.setMatrixAt(nPane++, dummy.matrix);
+    part(c, gy, lx, ly - 0.36, lz, ry ? 0.1 : 0.76, 0.72, ry ? 0.76 : 0.1, 0x3a2a1c); // plank frame behind the pane
+  };
+  const roofColors = [0x3d3a34, 0x4a4f3a, 0x5a3b2c];
+  VALE_CABINS.forEach((c, i) => {
+    const gy = groundAt(c.x, c.z) - 0.6, top = gy + c.hgt + 0.6, rh = c.w * 0.62; // walls sunk into the slope
+    dummy.position.set(c.x, gy, c.z); dummy.rotation.set(0, c.rot, 0); dummy.scale.set(c.w, c.hgt + 0.6, c.d); dummy.updateMatrix();
+    cabin.walls.setMatrixAt(i, dummy.matrix);
+    cabin.walls.setColorAt(i, col.setHSL(0.07, 0.25 + c.r * 0.15, 0.55 + c.r * 0.15, THREE.SRGBColorSpace));
+    dummy.position.y = top; dummy.scale.set(c.w * 1.3, rh, c.d * 1.18); dummy.updateMatrix();
+    cabin.roofs.setMatrixAt(i, dummy.matrix);
+    cabin.roofs.setColorAt(i, col.setHex(roofColors[Math.floor(c.r * roofColors.length)]));
+    const g = gy + 0.6, front = c.d / 2; // local +z faces the water
+    part(c, top, 0, rh - 0.05, 0, 0.2, 0.18, c.d * 1.2, 0x2a1f16);                       // ridge beam
+    part(c, top, c.w * 0.26, rh * 0.25, -c.d * 0.3, 0.75, rh * 0.75 + 1.3, 0.75, 0x6d6a62); // stone chimney through the roof
+    part(c, g, c.w * 0.2, 0, front + 0.06, 0.95, 1.95, 0.12, 0x4a3322);                   // plank door
+    part(c, g - 0.35, 0, 0, front + 1.1, c.w * 0.9, 0.4, 2.1, 0x6b5238);                  // porch deck
+    part(c, g - 0.1, -c.w / 2 - 0.55, 0, -c.d * 0.1, 0.9, 1.2, c.d * 0.55, 0x7a5a3a);    // woodpile along the side wall
+    pane(c, g, -c.w * 0.22, 1.5, front + 0.06, 0);
+    pane(c, g, c.w / 2 + 0.06, 1.5, 0, Math.PI / 2);
+    pane(c, g, -c.w / 2 - 0.06, 1.5, c.d * 0.2, Math.PI / 2);
+    const [chx, chz] = local(c, c.w * 0.26, -c.d * 0.3);
+    chimneys.push({ x: chx, y: top + rh + 1.1, z: chz, acc: vr() });
+    addObstacle(c.x, c.z, Math.max(c.w, c.d) * 0.65, top + rh + 1.3);
+  });
+  cabin.parts.count = nPart; cabin.panes.count = nPane;
+  for (const o of Object.values(cabin)) { o.castShadow = o.receiveShadow = true; scene.add(o); }
 
   // ---- Fireflies: drifting glints over the river and its banks, out at dusk and twilight ----
   const NF = 420, fpos = new Float32Array(NF * 3), fph = new Float32Array(NF);
@@ -176,8 +245,17 @@ export function buildVale(scene, smoke) {
 
   let sprayAcc = 0;
   return {
-    setTime(name) { fMat.uniforms.uOn.value = name === 'twilight' ? 1 : name === 'dusk' ? 0.7 : 0; flies.visible = fMat.uniforms.uOn.value > 0; },
+    setTime(name) {
+      fMat.uniforms.uOn.value = name === 'twilight' ? 1 : name === 'dusk' ? 0.7 : 0;
+      flies.visible = fMat.uniforms.uOn.value > 0;
+      paneMat.emissive.setHex(name === 'dusk' || name === 'dawn' || name === 'twilight' ? 0xdd8f38 : 0x0e1218); // lamps lit in the low light
+    },
     update(dt, camPos) {
+      for (const c of chimneys) { // wood smoke, as the village chimneys
+        if ((c.x - camPos.x) ** 2 + (c.z - camPos.z) ** 2 > AMBIENT_FAR2) continue;
+        for (c.acc += 1.1 * dt; c.acc >= 1; c.acc--)
+          smoke.spawn(c.x + (vr() - 0.5) * 0.3, c.y, c.z + (vr() - 0.5) * 0.3, 0, 0.8, 0, 6 + vr() * 2, 1.4 + vr() * 0.4, 0.12, 1.1);
+      }
       // spray rising off the plunge pool, only while the camera is near enough to see it
       if ((camPos.x - poolX) ** 2 + (camPos.z - poolZ) ** 2 > AMBIENT_FAR2 * 4) return;
       for (sprayAcc += dt * 7; sprayAcc >= 1; sprayAcc--)
