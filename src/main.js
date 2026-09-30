@@ -28,20 +28,30 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, 9000);
 const world = buildWorld(scene);
 const cover = createGroundCover(scene, world);
-// Two planes: the one you fly, and the other parked beside its own landing site
-const planes = { red: createPlane(LIVERIES.red), blue: createPlane(LIVERIES.blue) };
-const HOMES = { red: { strip: STRIPS[0], dir: 1 }, blue: { strip: STRIPS[1], dir: -1 } };
-const PARK = { red: { x: 32, z: 250, yaw: 0.5 }, blue: { x: 45, z: -944, yaw: 2.6 } };
+// The fleet, in menu order (keys 1–4): each plane's home (strip + take-off direction, 1 = along its heading) and
+// its parking spot beside that strip. The one you fly leaves its spot; every other plane waits parked on its own.
+const stripNamed = (name) => STRIPS.find((s) => s.name === name);
+const FLEET = {
+  red: { home: { strip: stripNamed('Airfield'), dir: 1 }, park: { x: 32, z: 250, yaw: 0.5 } },
+  blue: { home: { strip: stripNamed('Meadow strip'), dir: -1 }, park: { x: 45, z: -944, yaw: 2.6 } },
+  bush: { home: { strip: stripNamed('Pine Vale'), dir: -1 }, park: { x: 7175, z: -1170, yaw: 2.3 } },
+  racer: { home: { strip: stripNamed('Beach strip'), dir: 1 }, park: { x: 280, z: 1800, yaw: -2.3 } },
+};
+const planes = Object.fromEntries(Object.keys(FLEET).map((id) => [id, createPlane(LIVERIES[id])]));
 let plane = planes.red, started = false, paused = false;
 for (const p of Object.values(planes)) scene.add(p.group);
 const park = (id) => {
-  const p = PARK[id], g = planes[id].group, y = world.groundAt(p.x, p.z);
+  const p = FLEET[id].park, g = planes[id].group, y = world.groundAt(p.x, p.z);
   g.position.set(p.x, y + GEAR_H, p.z);
   g.quaternion.setFromEuler(new THREE.Euler(0.17, p.yaw, 0, 'YXZ'));
   planes[id].pilot.visible = true;
-  setDynamicObstacle('parked', p.x, p.z, 4, y + 3);
+  setDynamicObstacle(`parked-${id}`, p.x, p.z, 4, y + 3);
 };
-park('blue');
+// Put every plane but the flown one on its spot; the flown one's spot is free (no obstacle left behind)
+const parkOthers = (flown) => {
+  for (const id of Object.keys(FLEET)) if (id !== flown) park(id); else setDynamicObstacle(`parked-${id}`, null);
+};
+parkOthers('red');
 const smoke = createSmoke(scene);
 const landmarks = buildLandmarks(scene, smoke);
 const vale = buildVale(scene, smoke);
@@ -101,7 +111,7 @@ function openMenu() {
 function closeMenu() { if (started) { paused = false; menu.hidden = true; } }
 // Where a plane starts: its home strip, or the landing site picked under "Start at"
 function startFor(id) {
-  if (settings.start === 'home') return HOMES[id];
+  if (settings.start === 'home') return FLEET[id].home;
   const strip = STRIPS[+settings.start];
   return { strip, dir: strip.takeoff };
 }
@@ -110,13 +120,12 @@ function stripLabel({ strip, dir }) {
   const rwy = String(Math.round(bearing / 10) || 36).padStart(2, '0');
   return `${strip.name} · ${strip.surface} runway ${rwy}`;
 }
-// Fly a plane from a given start; the other one goes back to its parking spot
+// Fly a plane from a given start; the others go back to their parking spots
 function takeOff(id, start) {
-  const other = id === 'red' ? 'blue' : 'red';
   plane.pilot.visible = true;
   plane = planes[id];
   plane.pilot.visible = !cockpit;
-  park(other);
+  parkOthers(id);
   flight.setAircraft(AIRCRAFT[id]); // each plane handles its own way
   flight.home = start;
   flight.reset();
@@ -140,9 +149,9 @@ function quitAdventure() {
   plane.pilot.visible = true;
   plane = planes.red;
   plane.pilot.visible = !cockpit;
-  park('blue');
+  parkOthers('red');
   flight.setAircraft(AIRCRAFT.red);
-  flight.home = HOMES.red;
+  flight.home = FLEET.red.home;
   flight.reset();
   syncPlane(plane, flight, 0);
   snap = true;
@@ -237,7 +246,6 @@ function monitor(rawDt) {
 
 // ---- Camera: chase view that lags in turns, banks a little, widens FOV with speed; or cockpit view ----
 let cockpit = false, snap = true, fov = 60, approachIdx = 0;
-const eye = new THREE.Vector3(0, 1.0, 0.55);
 const _f = new THREE.Vector3(), _sf = new THREE.Vector3(0, 0, -1), _u = new THREE.Vector3(), _d = new THREE.Vector3(), _l = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 function updateCamera(dt) {
@@ -248,7 +256,7 @@ function updateCamera(dt) {
   if (adventure.shot(camera, dt)) { snap = true; return; } // delivery scene: the adventure directs the camera
 
   if (cockpit) {
-    camera.position.copy(eye).applyQuaternion(flight.q).add(flight.pos);
+    camera.position.copy(plane.eye).applyQuaternion(flight.q).add(flight.pos);
     camera.quaternion.copy(flight.q);
     camera.up.copy(WORLD_UP);
     return;
@@ -285,7 +293,10 @@ function frame() {
   const t0 = perfEl.hidden ? 0 : performance.now();
   const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
   renderer.info.reset();
-  if (!menu.hidden) { if (input.consume('Digit1')) choose('red'); else if (input.consume('Digit2')) choose('blue'); else if (input.consume('Digit3')) startAdventure(); }
+  if (!menu.hidden) { // 1–4: the fleet in menu order, 5: the adventure
+    const id = Object.keys(FLEET).find((_, i) => input.consume(`Digit${i + 1}`));
+    if (id) choose(id); else if (input.consume('Digit5')) startAdventure();
+  }
   if (input.consume('Escape') && started) { if (paused) closeMenu(); else openMenu(); }
   if (input.consume('KeyR') && !adventure.holdsPlane) { flight.reset(); snap = true; }
   if (input.consume('KeyT') && !adventure.active) { flight.startApproach(world.approaches[approachIdx++ % world.approaches.length]); snap = true; }
@@ -304,7 +315,7 @@ function frame() {
     updateWind(time.value);
     if (!adventure.holdsPlane) flight.update(dt, input); // story cards and deliveries hold the plane still
     syncPlane(plane, flight, dt);
-    smoke.update(dt, plane.group, flight);
+    smoke.update(dt, plane.group, flight, plane.exhausts);
   }
   updateCamera(dt);
   pointScale.value = renderer.getDrawingBufferSize(_size).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));

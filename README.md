@@ -27,13 +27,13 @@ A WebGL2 browser is required (current Chrome, Edge, Firefox, or Safari 15+).
 | R | reset to the start | T | landing practice (cycles the approaches) |
 | M | map | G | graphics: auto → low → medium → high |
 | Esc | pause menu | H | hide the controls card |
-| 1 / 2 / 3 | in the menu: red plane, blue plane, adventure | P | perf readout (dev) |
+| 1 – 4 / 5 | in the menu: red, blue, bush plane, racer / adventure | P | perf readout (dev) |
 
 Enter or Space closes story cards.
 
 ### The menu
 
-- **Plane:** the red biplane (Airfield) or the blue parasol monoplane (Meadow strip). The red one is quicker (~205 km/h) with a sharp stall around 75 km/h; the blue one is lighter and slower (~165 km/h), lifts off early and stalls gently around 60 km/h. The other plane is parked beside its strip.
+- **Plane:** the red biplane (Airfield), the blue parasol monoplane (Meadow strip), the yellow bush plane (Pine Vale) or the silver racer (Beach strip). The red one is quicker (~205 km/h) with a sharp stall around 75 km/h; the blue one is lighter and slower (~165 km/h), lifts off early and stalls gently around 60 km/h. The bush plane is the slowest (~140 km/h) and gets off in under 30 m, with a very soft stall around 50 km/h; the racer is the fastest (~260 km/h), needs a long run, and stalls hard around 95 km/h, so ease off the stick after liftoff and brake on landing. The planes you're not flying wait parked beside their home strips.
 - **Island Air Mail:** the adventure. Progress is saved in the browser after every delivery.
 - **Start at:** take off from any of the eight landing sites.
 - **Time of day:** Dawn, Golden hour, Dusk or Twilight. **Wind:** Calm, Light or Breezy. **Sound:** on or off.

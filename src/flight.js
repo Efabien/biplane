@@ -10,12 +10,20 @@ const G = 9.81, TAIL_PITCH = 0.17, ROLL_FRICTION = 0.4, BRAKE = 4;
 // What differs per plane: THRUST (full throttle), KD / KI (parasitic / induced drag), KL (lift per CL·v²),
 // CL0 + CLA·aoa up to the critical angle STALL, then lift falls by DROP per radian beyond it, down to FLOOR·CL_MAX.
 // SLOW is the airspeed (m/s) under which the stall warning shows; ROLL the aileron rate (rad/s at full stick).
+// Optional: VAPP / TAPP, the airspeed (m/s) and throttle a training approach (T) starts at (default 30 m/s, 0.3).
 const aircraft = (a) => ({ ...a, CL_MAX: a.CL0 + a.CLA * a.STALL, CL_MIN: a.CL0 - a.CLA * a.STALL });
 export const AIRCRAFT = {
   // Red biplane: ~205 km/h top speed, ~75 km/h stall, liftoff ~85 km/h with back pressure; a sharp stall
   red: aircraft({ THRUST: 3.8, KD: 0.001, KI: 0.001, KL: 0.0157, CL0: 0.25, CLA: 5, STALL: 0.26, DROP: 4, FLOOR: 0.35, SLOW: 20, ROLL: 2.0 }),
   // Blue parasol: light, big wing, draggy. ~165 km/h top speed, ~60 km/h stall, liftoff ~73 km/h; soft, forgiving stall
   blue: aircraft({ THRUST: 5.0, KD: 0.0021, KI: 0.0012, KL: 0.0214, CL0: 0.25, CLA: 5, STALL: 0.28, DROP: 1.5, FLOOR: 0.6, SLOW: 16, ROLL: 2.3 }),
+  // Bush plane: a big light wing and a lot of drag. ~140 km/h top speed, ~50 km/h stall, off in ~35 m at ~60 km/h,
+  // a strong climb when slow and a stall that barely bites
+  bush: aircraft({ THRUST: 6.0, KD: 0.0038, KI: 0.0015, KL: 0.032, CL0: 0.25, CLA: 5, STALL: 0.28, DROP: 1.0, FLOOR: 0.7, SLOW: 13.5, ROLL: 2.0, VAPP: 23, TAPP: 0.33 }),
+  // Racer: small, thin wing and very little drag. ~260 km/h top speed, ~95 km/h stall that bites hard (sharp
+  // drop, low floor: holding full back stick just after liftoff settles it back), off in ~130 m at ~110 km/h with
+  // back pressure, a quick roll; approaches at 133 km/h
+  racer: aircraft({ THRUST: 4.4, KD: 0.0008, KI: 0.0012, KL: 0.01005, CL0: 0.2, CLA: 5, STALL: 0.24, DROP: 6, FLOOR: 0.25, SLOW: 27, ROLL: 3.0, VAPP: 37, TAPP: 0.3 }),
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -63,16 +71,17 @@ export class Flight {
     this.t = 0;
   }
 
-  // Training: on the 3° glide path, lined up, 108 km/h, throttle 30%
+  // Training: on the 3° glide path, lined up, at the plane's approach speed VAPP (m/s through the air, default 30 =
+  // 108 km/h) and approach throttle TAPP (default 30%)
   startApproach(a) {
-    const D = a.D, s = a.strip;
+    const D = a.D, s = a.strip, vApp = this.ac.VAPP ?? 30;
     this.reset();
     this.state = 'air';
     this.flown = true;
-    this.throttle = 0.3;
+    this.throttle = this.ac.TAPP ?? 0.3;
     const glide = (3 * Math.PI) / 180;
     this.pos.set(s.x + a.ox * (a.aimU + D), a.aimY + GEAR_H + D * Math.tan(glide), s.z + a.oz * (a.aimU + D));
-    this.vel.set(-a.ox * Math.cos(glide), -Math.sin(glide), -a.oz * Math.cos(glide)).multiplyScalar(30).add(wind.vec); // 30 m/s through the air
+    this.vel.set(-a.ox * Math.cos(glide), -Math.sin(glide), -a.oz * Math.cos(glide)).multiplyScalar(vApp).add(wind.vec);
     this.q.setFromEuler(_e.set(0.06, Math.atan2(a.ox, a.oz), 0, 'YXZ'));
   }
 

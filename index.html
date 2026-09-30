@@ -42,7 +42,7 @@
                background: var(--brass); -webkit-background-clip: text; background-clip: text; color: transparent; }
     #menu .sub { margin: 0; opacity: .85; }
     #menu .cards { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
-    #menu .plane { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 12px; align-items: center; text-align: left; width: 270px;
+    #menu .plane { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 12px; align-items: center; text-align: left; width: 284px;
                    padding: 12px 14px; border: 2px solid #b8893f; border-radius: 6px; cursor: pointer; color: var(--ink);
                    background: radial-gradient(ellipse at 30% 20%, var(--paper), var(--paper-2)); font: 15px var(--type); }
     #menu .plane:hover, #menu .plane:focus-visible { outline: 2px solid #f6e0a6; outline-offset: 2px; }
@@ -115,7 +115,9 @@
       <div class="cards">
         <button class="plane" data-plane="red"><span class="swatch" style="background:#c4453a"></span>Red biplane<kbd>1</kbd><small>Airfield · dirt runway 36</small></button>
         <button class="plane" data-plane="blue"><span class="swatch" style="background:#3d6fb0"></span>Blue parasol<kbd>2</kbd><small>Meadow strip · grass runway 09</small></button>
-        <button class="plane adv"><span class="swatch envelope"></span>Island Air Mail<kbd>3</kbd><small></small></button>
+        <button class="plane" data-plane="bush"><span class="swatch" style="background:#e8b830"></span>Yellow bush plane<kbd>3</kbd><small>Pine Vale · grass runway 09</small></button>
+        <button class="plane" data-plane="racer"><span class="swatch" style="background:#c9ccd0;box-shadow:inset 0 0 0 4px #2f7d4f"></span>Silver racer<kbd>4</kbd><small>Beach strip · sand runway 07</small></button>
+        <button class="plane adv"><span class="swatch envelope"></span>Island Air Mail<kbd>5</kbd><small></small></button>
       </div>
       <div class="advopts">
         <button id="quit-adv" hidden>Quit adventure</button>

@@ -283,8 +283,8 @@ export function addObstacle(x, z, r, top, bottom = -Infinity) {
   const i = Math.floor((x - X0) / GCELL), j = Math.floor((z - Z0) / GCELL);
   if (i >= 0 && j >= 0 && i < GNX && j < GNZ) grid[j * GNX + i].push({ x, z, r, top, bottom });
 }
-const dynamic = new Map(); // movable obstacles, e.g. the parked plane
-export function setDynamicObstacle(key, x, z, r, top) { dynamic.set(key, { x, z, r, top }); }
+const dynamic = new Map(); // movable obstacles by name, e.g. the parked planes; x = null removes one
+export function setDynamicObstacle(key, x, z, r, top) { if (x == null) dynamic.delete(key); else dynamic.set(key, { x, z, r, top }); }
 export function hitObstacle(x, y, z) {
   for (const o of dynamic.values()) if (y - 1 < o.top && (o.x - x) ** 2 + (o.z - z) ** 2 < (o.r + 3) ** 2) return true;
   const ci = Math.floor((x - X0) / GCELL), cj = Math.floor((z - Z0) / GCELL);

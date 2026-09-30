@@ -4,7 +4,7 @@ import { pointScale, atmo, wind } from './style.js';
 // Shared smoke particles (plane exhaust, crash plume, chimneys, steam train): soft round points that slow to
 // the surrounding air, drift with the wind, rise, grow and fade.
 const N = 900;
-const EXHAUSTS = [new THREE.Vector3(-0.58, -0.28, -1.0), new THREE.Vector3(0.58, -0.28, -1.0)];
+const EXHAUSTS = [new THREE.Vector3(-0.58, -0.28, -1.0), new THREE.Vector3(0.58, -0.28, -1.0)]; // default: the biplane's
 const COWL = new THREE.Vector3(0, 0.3, -2.2);
 // Ambient emitters (chimneys, train) only puff within this horizontal range of the camera, so far-off
 // smoke doesn't churn the ring and evict the plane's exhaust trail
@@ -78,8 +78,8 @@ export function createSmoke(scene) {
   const rnd = () => Math.random() - 0.5;
   return {
     spawn,
-    update(dt, group, flight) {
-      // Plane: exhaust trail (thicker with throttle), or a thin dark plume after a crash
+    update(dt, group, flight, exhausts = EXHAUSTS) {
+      // Plane: exhaust trail (thicker with throttle) from its exhaust points (local), or a thin dark plume after a crash
       group.updateMatrixWorld();
       const crashed = flight.state === 'crashed';
       acc += (crashed ? 22 : 6 + 44 * flight.throttle) * dt;
@@ -88,7 +88,7 @@ export function createSmoke(scene) {
           group.localToWorld(p.copy(COWL));
           spawn(p.x, p.y, p.z, rnd() * 0.6, 2 + Math.random(), rnd() * 0.6, 5 + Math.random() * 2, 0.8 + Math.random() * 0.4, 0.75, 2.2);
         } else {
-          group.localToWorld(p.copy(EXHAUSTS[side ^= 1]));
+          group.localToWorld(p.copy(exhausts[side = (side + 1) % exhausts.length]));
           p.addScaledVector(flight.vel, -Math.random() * dt); // spread emission within the frame so the trail has no gaps
           fwd.set(0, 0, -1).applyQuaternion(group.quaternion);
           const v = flight.vel;

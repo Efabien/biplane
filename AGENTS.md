@@ -17,7 +17,7 @@ what the game is and how to play it.
 
 | File | What it owns |
 |---|---|
-| `src/main.js` | Renderer and composer (MSAA target + SMAA + OutputPass), menu, planes, camera, quality levels + auto monitor, key handling, the frame loop |
+| `src/main.js` | Renderer and composer (MSAA target + SMAA + OutputPass), menu, the fleet (`FLEET`: per plane its home strip + take-off direction and parking spot; the ones not flown stay parked, each a `parked-<id>` dynamic obstacle), camera (cockpit at `plane.eye`), quality levels + auto monitor, key handling, the frame loop |
 | `src/world.js` | **The world**: the height function and grid `H`, `groundAt`/`slopeAt`, strips (`STRIPS`), landmark positions, terrain mesh (chunks + LOD), terrain colours, water plane, village and hamlet houses, strip dressing, trees, clouds, lights, shadows, `setTime`, obstacle grid |
 | `src/style.js` | The look: time-of-day presets (`TIMES`), shared `atmo` uniforms, fog/haze shader chunks, `paint()` (the toon-banded Lambert used by nearly everything), sky, clouds, cloud mist, water shaders, wind |
 | `src/landmarks.js` | Lighthouse (+ lamp beams), offshore light, sea fort, castle, sky ruin, railway viaduct + steam train |
@@ -26,8 +26,8 @@ what the game is and how to play it.
 | `src/life.js` | Birds, sailboats, sheep, village and hamlet chimney smoke |
 | `src/grass.js` | GPU ground cover (grass tufts, flowers) in a tile that follows the camera, coloured from the terrain colour texture |
 | `src/smoke.js` | Shared particle ring (exhaust, crash plume, chimneys, train, spray); `AMBIENT_FAR2` gates ambient emitters |
-| `src/flight.js` | Flight model (`Flight`: state `ground`/`air`/`crashed`, `pos`, `vel`, `q`, `heading`, `throttle`, `flown`), per-plane handling (`AIRCRAFT.red/blue`: thrust, drag, lift, stall; `setAircraft` before `reset`), ground handling, collisions |
-| `src/plane.js` | Plane models (red biplane, blue parasol monoplane; `LIVERIES[].kind` picks the airframe, the prop, tail, cockpit and wheels are shared) + liveries, `syncPlane` (prop blur, control surfaces) |
+| `src/flight.js` | Flight model (`Flight`: state `ground`/`air`/`crashed`, `pos`, `vel`, `q`, `heading`, `throttle`, `flown`), per-plane handling (`AIRCRAFT.red/blue/bush/racer`: thrust, drag, lift, stall, optional `VAPP`/`TAPP` for training approaches; `setAircraft` before `reset`), ground handling, collisions |
+| `src/plane.js` | Plane models (red biplane, blue parasol monoplane, yellow bush plane, silver racer; `LIVERIES[].kind` picks the airframe, which may give its own cockpit `eye`, smoke `exhausts` and `openCockpit: false` for a cabin or canopy; the prop, tail, cockpit and wheels are shared) + liveries, `syncPlane` (prop blur, control surfaces) |
 | `src/adventure.js` | Island Air Mail: `CHAPTERS` data, people, story cards, villagers, drops, beacon, save/load |
 | `src/nav.js` | Compass tape and paper minimap (`PLACES` labels, rendered from `groundAt`) |
 | `src/hud.js` | Instrument panel |
