@@ -4,16 +4,25 @@ import { wind } from './style.js';
 
 export const GEAR_H = 1.6; // CG height above the wheels' contact point
 
-// Accelerations in m/s². Tuned for ~205 km/h top speed, ~75 km/h stall, liftoff ~85 km/h with back pressure.
-const G = 9.81, THRUST = 3.8, KD = 0.001, KI = 0.001, KL = 0.0157;
-const CL0 = 0.25, CLA = 5, STALL = 0.26, CL_MAX = CL0 + CLA * STALL, CL_MIN = CL0 - CLA * STALL;
-const TAIL_PITCH = 0.17, ROLL_FRICTION = 0.4, BRAKE = 4;
+// Shared by both planes (same gear, same world). Accelerations in m/s².
+const G = 9.81, TAIL_PITCH = 0.17, ROLL_FRICTION = 0.4, BRAKE = 4;
+
+// What differs per plane: THRUST (full throttle), KD / KI (parasitic / induced drag), KL (lift per CL·v²),
+// CL0 + CLA·aoa up to the critical angle STALL, then lift falls by DROP per radian beyond it, down to FLOOR·CL_MAX.
+// SLOW is the airspeed (m/s) under which the stall warning shows; ROLL the aileron rate (rad/s at full stick).
+const aircraft = (a) => ({ ...a, CL_MAX: a.CL0 + a.CLA * a.STALL, CL_MIN: a.CL0 - a.CLA * a.STALL });
+export const AIRCRAFT = {
+  // Red biplane: ~205 km/h top speed, ~75 km/h stall, liftoff ~85 km/h with back pressure; a sharp stall
+  red: aircraft({ THRUST: 3.8, KD: 0.001, KI: 0.001, KL: 0.0157, CL0: 0.25, CLA: 5, STALL: 0.26, DROP: 4, FLOOR: 0.35, SLOW: 20, ROLL: 2.0 }),
+  // Blue parasol: light, big wing, draggy. ~165 km/h top speed, ~60 km/h stall, liftoff ~73 km/h; soft, forgiving stall
+  blue: aircraft({ THRUST: 5.0, KD: 0.0021, KI: 0.0012, KL: 0.0214, CL0: 0.25, CLA: 5, STALL: 0.28, DROP: 1.5, FLOOR: 0.6, SLOW: 16, ROLL: 2.3 }),
+};
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-function liftCoef(a) {
-  if (a > STALL) return CL_MAX * Math.max(0.35, 1 - (a - STALL) * 4);
-  if (a < -STALL) return CL_MIN * Math.max(0.35, 1 - (-a - STALL) * 4);
-  return CL0 + CLA * a;
+function liftCoef(ac, a) {
+  if (a > ac.STALL) return ac.CL_MAX * Math.max(ac.FLOOR, 1 - (a - ac.STALL) * ac.DROP);
+  if (a < -ac.STALL) return ac.CL_MIN * Math.max(ac.FLOOR, 1 - (-a - ac.STALL) * ac.DROP);
+  return ac.CL0 + ac.CLA * a;
 }
 
 const _fwd = new THREE.Vector3(), _up = new THREE.Vector3(), _right = new THREE.Vector3();
@@ -30,8 +39,11 @@ export class Flight {
     this.rates = new THREE.Vector3(); // local pitch / yaw / roll rates (rad/s)
     this.ctrl = { pitch: 0, roll: 0, yaw: 0 };
     this.home = { strip: STRIPS[0], dir: 1 }; // where R puts you: strip + take-off direction (1 = along its heading)
+    this.ac = AIRCRAFT.red;                    // the plane being flown (setAircraft, then reset)
     this.reset();
   }
+
+  setAircraft(ac) { this.ac = ac; }
 
   reset() {
     this.state = 'ground';
@@ -104,15 +116,15 @@ export class Flight {
     _vl.copy(_va).applyQuaternion(_inv.copy(q).invert());
     const aoa = v > 2 ? Math.atan2(-_vl.y, -_vl.z) : 0;
     const beta = v > 2 ? Math.atan2(_vl.x, -_vl.z) : 0;
-    const cl = liftCoef(aoa);
+    const ac = this.ac, cl = liftCoef(ac, aoa);
 
-    _acc.set(0, -G, 0).addScaledVector(_fwd, this.throttle * THRUST);
+    _acc.set(0, -G, 0).addScaledVector(_fwd, this.throttle * ac.THRUST);
     if (v > 0.5) {
       _vh.copy(_va).divideScalar(v);
       _lift.copy(_up).addScaledVector(_vh, -_up.dot(_vh));
       if (_lift.lengthSq() > 1e-6) _lift.normalize();
-      _acc.addScaledVector(_lift, KL * cl * v * v);
-      _acc.addScaledVector(_vh, -(KD + KI * cl * cl) * v * v);
+      _acc.addScaledVector(_lift, ac.KL * cl * v * v);
+      _acc.addScaledVector(_vh, -(ac.KD + ac.KI * cl * cl) * v * v);
       _acc.addScaledVector(_right, -_vl.x * 1.5); // side force: kills sideslip
     }
     vel.addScaledVector(_acc, dt);
@@ -124,11 +136,11 @@ export class Flight {
     _tgt.set(
       c.pitch * 1.1 * auth - (a - 0.05) * 2.5 * stab,
       c.yaw * 0.6 * auth - b * 2.5 * stab,
-      -c.roll * 2.0 * auth - _right.y * 0.6 * auth, // dihedral: gently levels the wings
+      -c.roll * ac.ROLL * auth - _right.y * 0.6 * auth, // dihedral: gently levels the wings
     );
     rates.lerp(_tgt, Math.min(1, dt * 5));
     q.multiply(_dq.setFromEuler(_e.set(rates.x * dt, rates.y * dt, rates.z * dt, 'XYZ'))).normalize();
-    this.stall = aoa > STALL || v < 20;
+    this.stall = aoa > ac.STALL || v < ac.SLOW;
 
     if (world.hitObstacle(pos.x, pos.y, pos.z)) return this.crash('hit an obstacle');
     const gh = world.groundAt(pos.x, pos.z);
@@ -159,7 +171,7 @@ export class Flight {
   }
 
   groundStep(dt, brake) {
-    const { pos, ctrl: c, world } = this;
+    const { pos, ctrl: c, world, ac } = this;
     // Taildragger: tail down when slow, tail lifts with speed; back pressure raises the nose for rotation
     const f = clamp(this.speed / 20, 0, 1);
     const target = TAIL_PITCH * (1 - f) + (Math.max(0, c.pitch) * 0.2 + Math.min(0, c.pitch) * 0.02 - 0.03) * f;
@@ -170,7 +182,7 @@ export class Flight {
     const air = this.speed - (wind.vec.x * dx + wind.vec.z * dz); // headwind adds airspeed
     this.air = Math.max(0, air);
     const slope = (world.groundAt(pos.x + dx * 2, pos.z + dz * 2) - world.groundAt(pos.x - dx * 2, pos.z - dz * 2)) / 4;
-    const acc = this.throttle * THRUST - KD * air * Math.abs(air) - G * slope; // uphill slows you, downhill speeds you up
+    const acc = this.throttle * ac.THRUST - ac.KD * air * Math.abs(air) - G * slope; // uphill slows you, downhill speeds you up
     const friction = ROLL_FRICTION + (brake ? BRAKE : 0);
     this.speed = Math.max(0, this.speed + (acc - friction) * dt);
 
@@ -183,7 +195,7 @@ export class Flight {
     if (world.hitObstacle(pos.x, pos.y, pos.z)) return this.crash('hit an obstacle');
 
     // Liftoff only when the wings actually carry the weight
-    if (KL * liftCoef(this.gPitch) * this.air * this.air > G) {
+    if (ac.KL * liftCoef(ac, this.gPitch) * this.air * this.air > G) {
       this.state = 'air';
       this.flown = true;
       this.vel.set(dx * this.speed, 0.5, dz * this.speed);

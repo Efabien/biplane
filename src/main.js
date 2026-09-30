@@ -14,7 +14,7 @@ import { createLife } from './life.js';
 import { createNav } from './nav.js';
 import { time, pointScale, TIMES, WINDS, wind, updateWind } from './style.js';
 import { createSound } from './sound.js';
-import { Flight, GEAR_H } from './flight.js';
+import { Flight, GEAR_H, AIRCRAFT } from './flight.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import { createAdventure } from './adventure.js';
@@ -117,6 +117,7 @@ function takeOff(id, start) {
   plane = planes[id];
   plane.pilot.visible = !cockpit;
   park(other);
+  flight.setAircraft(AIRCRAFT[id]); // each plane handles its own way
   flight.home = start;
   flight.reset();
   snap = true;
@@ -140,6 +141,7 @@ function quitAdventure() {
   plane = planes.red;
   plane.pilot.visible = !cockpit;
   park('blue');
+  flight.setAircraft(AIRCRAFT.red);
   flight.home = HOMES.red;
   flight.reset();
   syncPlane(plane, flight, 0);

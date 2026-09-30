@@ -26,8 +26,8 @@ what the game is and how to play it.
 | `src/life.js` | Birds, sailboats, sheep, village and hamlet chimney smoke |
 | `src/grass.js` | GPU ground cover (grass tufts, flowers) in a tile that follows the camera, coloured from the terrain colour texture |
 | `src/smoke.js` | Shared particle ring (exhaust, crash plume, chimneys, train, spray); `AMBIENT_FAR2` gates ambient emitters |
-| `src/flight.js` | Flight model (`Flight`: state `ground`/`air`/`crashed`, `pos`, `vel`, `q`, `heading`, `throttle`, `flown`), ground handling, collisions |
-| `src/plane.js` | Biplane model + liveries, `syncPlane` (prop blur, control surfaces) |
+| `src/flight.js` | Flight model (`Flight`: state `ground`/`air`/`crashed`, `pos`, `vel`, `q`, `heading`, `throttle`, `flown`), per-plane handling (`AIRCRAFT.red/blue`: thrust, drag, lift, stall; `setAircraft` before `reset`), ground handling, collisions |
+| `src/plane.js` | Plane models (red biplane, blue parasol monoplane; `LIVERIES[].kind` picks the airframe, the prop, tail, cockpit and wheels are shared) + liveries, `syncPlane` (prop blur, control surfaces) |
 | `src/adventure.js` | Island Air Mail: `CHAPTERS` data, people, story cards, villagers, drops, beacon, save/load |
 | `src/nav.js` | Compass tape and paper minimap (`PLACES` labels, rendered from `groundAt`) |
 | `src/hud.js` | Instrument panel |
