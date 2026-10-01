@@ -35,7 +35,7 @@ const FLEET = {
   red: { home: { strip: stripNamed('Airfield'), dir: 1 }, park: { x: 32, z: 250, yaw: 0.5 } },
   blue: { home: { strip: stripNamed('Meadow strip'), dir: -1 }, park: { x: 45, z: -944, yaw: 2.6 } },
   bush: { home: { strip: stripNamed('Pine Vale'), dir: -1 }, park: { x: 7175, z: -1170, yaw: 2.3 } },
-  racer: { home: { strip: stripNamed('Beach strip'), dir: 1 }, park: { x: 280, z: 1800, yaw: -2.3 } },
+  hopper: { home: { strip: stripNamed('Beach strip'), dir: 1 }, park: { x: 280, z: 1800, yaw: -2.3 } },
 };
 const planes = Object.fromEntries(Object.keys(FLEET).map((id) => [id, createPlane(LIVERIES[id])]));
 let plane = planes.red, started = false, paused = false;

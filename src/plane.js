@@ -66,7 +66,7 @@ export const LIVERIES = {
   red: { body: 0xf2e4c4, wing: 0xc4453a, trim: 0xc4453a, roundel: 0xc4453a, reg: 'IA-1' },
   blue: { body: 0x3d6fb0, wing: 0xf4f1ea, trim: 0x23406e, roundel: 0xf0c24a, reg: 'IA-2', kind: 'parasol' },
   bush: { body: 0xe8b830, wing: 0xe8b830, trim: 0x2b2622, roundel: 0x2b2622, reg: 'IA-3', kind: 'bush' },
-  racer: { body: 0xd4d2ca, wing: 0xd4d2ca, trim: 0x23714a, roundel: 0xf6f3ea, reg: 'IA-4', kind: 'racer' },
+  hopper: { body: 0x79976c, wing: 0xf2e4c4, trim: 0xf2e4c4, roundel: 0x2f5d3a, reg: 'IA-4', kind: 'hopper' },
 };
 
 // Three vertical rudder stripes in the livery's colours, hinge side first
@@ -605,159 +605,141 @@ function loft(prof, z0, z1, nz, nr, f0 = 0, f1 = 1) {
   return g;
 }
 
-// The racer's paint on the fuselage loft (canvas x along z from Z0 to Z1, y around from the belly): silver, a green nose
-// and a spear-shaped flash down each side, tapering to a point behind the cockpit
-function racerSkin(l, Z0, Z1) {
-  const c = document.createElement('canvas'), W = 1024, H = 256;
-  c.width = W; c.height = H;
-  const g = c.getContext('2d'), X = (z) => (z - Z0) / (Z1 - Z0) * W, hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
-  g.fillStyle = hex(l.body);
-  g.fillRect(0, 0, W, H);
-  g.fillStyle = hex(l.trim);
-  g.fillRect(0, 0, X(-1.5), H);
-  for (const u of [0.25, 0.75]) { // the flash, on the +x (u 0.25) and −x (u 0.75) sides; the canvas is flipped in y
-    const y = (1 - u) * H;
-    g.beginPath();
-    g.moveTo(X(-1.6), y - 0.09 * H);
-    g.quadraticCurveTo(X(-0.3), y - 0.07 * H, X(1.3), y);
-    g.quadraticCurveTo(X(-0.3), y + 0.07 * H, X(-1.6), y + 0.09 * H);
-    g.fill();
-    g.fillRect(X(1.2), y - 0.006 * H, X(4.1) - X(1.2), 0.012 * H); // pinstripe on to the tail
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
-
-// Racing number in a white disc with a green ring
-function numberTexture(l, text) {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d'), hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
-  g.fillStyle = hex(l.trim);
-  g.beginPath(); g.arc(64, 64, 62, 0, Math.PI * 2); g.fill();
-  g.font = '700 84px "Oswald", "Arial Narrow", sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  const draw = () => { // the disc is repainted under the digit, so the redraw with the webfont covers the fallback
-    g.fillStyle = hex(l.roundel);
-    g.beginPath(); g.arc(64, 64, 55, 0, Math.PI * 2); g.fill();
-    g.fillStyle = hex(l.trim);
-    g.fillText(text, 64, 70);
-    t.needsUpdate = true;
-  };
-  draw();
-  document.fonts?.ready.then(draw);
-  return t;
-}
-
-// Mew Gull-style low-wing racer: a slim, rounded fuselage with a long pointed cowl (an inline six) and a big spinner,
-// a bubble canopy faired into a raised spine, a tapered low wing with dihedral and no bracing, and wheel spats
-function racer({ livery, add, pivot, rod, V, cream, trim, dark }) {
-  // Fuselage: superellipse sections [z, centre y, half-width, half-height, squareness], nose to tail post
-  const Z0 = -2.52, Z1 = 4.25;
+// Fox Moth-style island hopper: a cabin biplane. A deep, round-shouldered fuselage carries a glazed passenger cabin
+// between the wings (two windows a side, a door on the port side), the pilot sits in the open cockpit behind it, an
+// inverted inline four lives under a long rounded cowl, and the wings are swept a little, Moth fashion
+function hopper({ livery, add, pivot, rod, wire, V, cream, trim, dark, metal, wood, leather, roundel, wing, regMat }) {
+  // Fuselage: superellipse sections [z, centre y, half-width, half-height, squareness], nose cap to tail post
+  const Z0 = -2.62, Z1 = 4.22;
   const body = smoothPts([
-    [Z0, 0, 0.29, 0.29, 2], [-2.2, 0.02, 0.36, 0.37, 2.2], [-1.7, 0.04, 0.41, 0.45, 2.4], [-1.0, 0.05, 0.45, 0.5, 2.6],
-    [-0.2, 0.05, 0.47, 0.51, 2.7], [0.6, 0.04, 0.46, 0.5, 2.7], [1.4, 0.03, 0.39, 0.44, 2.5], [2.3, 0.04, 0.28, 0.34, 2.3],
-    [3.2, 0.06, 0.17, 0.23, 2.1], [3.9, 0.08, 0.08, 0.13, 2], [Z1, 0.1, 0.012, 0.02, 2],
+    [Z0, -0.02, 0.2, 0.2, 2], [-2.4, -0.01, 0.33, 0.35, 2.4], [-2.0, 0, 0.42, 0.45, 2.8], [-1.55, 0, 0.5, 0.54, 3],
+    [-0.8, 0, 0.52, 0.56, 3], [-0.1, 0, 0.5, 0.54, 3], [0.6, -0.02, 0.44, 0.5, 2.8], [1.4, -0.02, 0.36, 0.42, 2.6],
+    [2.4, 0, 0.24, 0.3, 2.4], [3.3, 0.04, 0.13, 0.18, 2.2], [Z1, 0.08, 0.015, 0.03, 2],
   ]);
-  add(loft(body, Z0, Z1, 30, 20), paint(0xffffff, { map: racerSkin(livery, Z0, Z1) }), 0, 0, 0);
+  add(loft(body, Z0, Z1, 32, 20), cream, 0, 0, 0);
+  add(new THREE.CircleGeometry(0.2, 16).rotateY(Math.PI), dark, 0, -0.02, Z0 + 0.005); // closes the nose round the spinner
   // Where the fuselage's skin is at height y, station z (for decals that hug it)
   const skinX = (z, y) => {
     const [, yc, a, b, e] = body(z), t = Math.min(1, Math.abs((y - yc) / b));
     return a * Math.pow(1 - Math.pow(t, e), 1 / e);
   };
-  const decal = (w, h, zc, yc, mat, s) => {
-    const g = new THREE.PlaneGeometry(w, h, 6, 3).rotateY(s * Math.PI / 2), p = g.attributes.position;
+  const decal = (w, h, zc, yc, mat, s, off, segs = 6) => {
+    const g = new THREE.PlaneGeometry(w, h, segs, 3).rotateY(s * Math.PI / 2), p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const z = p.getZ(i) + zc, y = p.getY(i) + yc;
-      p.setXYZ(i, s * (skinX(z, y) + 0.016), y, z);
+      p.setXYZ(i, s * (skinX(z, y) + off), y, z);
     }
     g.computeVertexNormals();
     add(g, mat, 0, 0, 0).castShadow = false;
   };
-  const numMat = paint(0xffffff, { map: numberTexture(livery, livery.reg.split('-').pop()), alphaTest: 0.5 });
-  const regMat = paint(0xffffff, { map: regTexture(livery.reg), alphaTest: 0.5 });
-  for (const s of [-1, 1]) {
-    decal(0.5, 0.5, 1.95, 0.05, numMat, s);
-    decal(0.62, 0.19, 3.05, 0.07, regMat, s);
-  }
 
-  // Spinner (it doesn't need to turn; the shared one is hidden inside it)
-  const spin = new THREE.LatheGeometry([[0.31, 0], [0.305, 0.12], [0.28, 0.27], [0.22, 0.42], [0.12, 0.56], [0.001, 0.66]]
-    .map(([r, h]) => new THREE.Vector2(r, h)), 16).rotateX(-Math.PI / 2);
-  add(spin, cream, 0, 0, -2.48);
-  // Short exhaust stubs along each side of the cowl
-  const stub = new THREE.CylinderGeometry(0.035, 0.045, 0.16, 6).rotateZ(Math.PI / 2);
-  for (const s of [-1, 1]) for (const z of [-2.15, -1.95, -1.75, -1.55]) {
-    add(stub, dark, s * (skinX(z, 0.12) + 0.03), 0.12, z).rotation.y = s * 0.35;
-  }
-
-  // Bubble canopy (upper half-sections standing on y 0.40) over the pilot, and the spine it fairs into
-  const hood = smoothPts([
-    [-0.4, 0.4, 0.16, 0.1, 2], [-0.1, 0.4, 0.4, 0.42, 2], [0.25, 0.4, 0.47, 0.6, 2], [0.65, 0.4, 0.49, 0.66, 2],
-    [1.05, 0.4, 0.45, 0.58, 2], [1.45, 0.4, 0.34, 0.4, 2], [1.8, 0.4, 0.18, 0.2, 2], [2.0, 0.4, 0.04, 0.04, 2],
-  ]);
-  const glass = add(loft(hood, -0.4, 2.0, 14, 14, 0.25, 0.75), paint(0xcfe6f0, { transparent: true, opacity: 0.35 }), 0, 0, 0);
-  glass.castShadow = false;
-  const spine = smoothPts([
-    [0.95, 0.5, 0.06, 0.06, 2], [1.05, 0.46, 0.24, 0.3, 2.2], [1.35, 0.42, 0.3, 0.36, 2.3], [1.9, 0.35, 0.26, 0.28, 2.2],
-    [2.6, 0.27, 0.2, 0.2, 2.1], [3.3, 0.19, 0.12, 0.13, 2], [3.9, 0.13, 0.04, 0.05, 2],
-  ]);
-  add(loft(spine, 0.95, 3.9, 14, 12), cream, 0, 0, 0);
-
-  // Low wing, tapered, with elliptical tips and 5° of dihedral, in two halves hinged at the centre of its underside
-  // (y −0.46, just under the belly). The top slopes down to thin tips; ailerons ride at the trailing edge outboard.
-  const DIH = 5 * Math.PI / 180, WT = 0.16, TIP = 3.85, TE = 0.05;
-  const halfWing = (s) => {
-    const sh = new THREE.Shape();
-    sh.moveTo(0, -1.65);
-    sh.lineTo(s * 3.2, -0.98);
-    sh.quadraticCurveTo(s * 3.75, -0.86, s * TIP, -0.45);
-    sh.quadraticCurveTo(s * 3.9, TE, s * 3.3, TE);
-    sh.lineTo(0, TE);
-    sh.lineTo(0, -1.65);
-    const g = new THREE.ExtrudeGeometry(sh, { depth: WT, bevelEnabled: false, curveSegments: 6 }).rotateX(Math.PI / 2).translate(0, WT, 0);
-    const p = g.attributes.position;
-    for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) * (1 - 0.55 * Math.abs(p.getX(i)) / TIP));
+  // Cheatline along the window sills from the cowl to the tail, the cabin door (port side: a dark seam round a
+  // body-coloured panel, a handle and a step), two cabin windows a side (cream frames, dark glass), the roundel
+  // and the registration aft
+  const disc = (r, zc, yc, mat, s, off) => { // a circle decal hugging the skin
+    const g = new THREE.CircleGeometry(r, 24).rotateY(s * Math.PI / 2), p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const z = p.getZ(i) + zc, y = p.getY(i) + yc;
+      p.setXYZ(i, s * (skinX(z, y) + off), y, z);
+    }
     g.computeVertexNormals();
-    return g;
+    add(g, mat, 0, 0, 0).castShadow = false;
   };
-  const wingMat = paint(livery.wing), ailGeo = plate(1.3, 0.26, 0.05, 0.1).translate(0, 0, 0.13), ail = {};
+  const glass = paint(0x3b5a66), seam = paint(0x33402f);
   for (const s of [-1, 1]) {
-    const w = pivot(0, -0.46, 0);
-    w.rotation.z = s * DIH;
-    add(halfWing(s), wingMat, 0, 0, 0, w).receiveShadow = true;
-    const x = s * 2.6;
-    ail[s] = pivot(x, WT * (1 - 0.55 * 2.6 / TIP) / 2, TE, w);
-    add(ailGeo, trim, 0, 0, 0, ail[s]);
+    decal(5.7, 0.07, 0.75, 0.0, trim, s, 0.01, 40);
+    if (s < 0) {
+      decal(0.76, 1.02, -0.45, 0.0, seam, s, 0.014);
+      decal(0.7, 0.96, -0.45, 0.0, cream, s, 0.018);
+      add(new THREE.BoxGeometry(0.02, 0.03, 0.12), dark, s * (skinX(-0.2, -0.12) + 0.03), -0.12, -0.2);
+      add(new THREE.BoxGeometry(0.22, 0.03, 0.14), dark, s * 0.6, -0.62, -0.45); // step
+    }
+    for (const zc of [-1.15, -0.45]) {
+      decal(0.56, 0.4, zc, 0.26, trim, s, 0.022);
+      decal(0.5, 0.34, zc, 0.26, glass, s, 0.026);
+    }
+    disc(0.26, 1.5, 0.0, trim, s, 0.012);
+    disc(0.13, 1.5, 0.0, roundel, s, 0.016);
+    decal(0.62, 0.19, 2.35, 0.06, regMat, s, 0.014);
+  }
+  add(new THREE.SphereGeometry(0.13, 10, 8), leather, 0, 0.52, 1.02).scale.set(1, 1.4, 0.7); // headrest
+
+
+  // Engine: cowl louvres on each side, a filler cap on top, and the inline four's exhaust manifold running down the
+  // port side to a stub under the cabin's front window
+  const louvre = new THREE.BoxGeometry(0.02, 0.05, 0.28);
+  for (const s of [-1, 1]) for (const y of [0.1, 0.22, 0.34]) add(louvre, dark, s * (skinX(-1.95, y) + 0.005), y, -1.95);
+  add(new THREE.CylinderGeometry(0.05, 0.05, 0.05, 8), metal, 0, body(-1.75)[1] + body(-1.75)[3] + 0.01, -1.75);
+  const px = (z) => -(skinX(z, -0.3) + 0.04);
+  rod(V(px(-2.25), -0.3, -2.25), V(px(-1.0), -0.3, -1.0), 0.04, dark);
+  for (const z of [-2.15, -1.95, -1.75, -1.55]) rod(V(px(z) + 0.03, -0.18, z), V(px(z), -0.3, z), 0.025, dark);
+  rod(V(px(-1.0), -0.3, -1.0), V(px(-0.9) - 0.04, -0.42, -0.72), 0.04, dark);
+
+  // Wings: two fabric panels swept back 6° (both edges parallel, Moth fashion), the top one 1.25 m up and a little
+  // ahead of the lower, which passes through the fuselage under the windows. zw(x, z) is where a chord line at
+  // root station z has moved to at span station x.
+  const SWEEP = 6 * Math.PI / 180, TAN = Math.tan(SWEEP), zw = (x, z) => z + Math.abs(x) * TAN;
+  const swept = (geo) => { // shear a plate into a swept panel
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) p.setZ(i, zw(p.getX(i), p.getZ(i)));
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const TOP = { y: 1.25, z: -1.1, w: 9.4, d: 1.4 }, LOW = { y: -0.42, z: -0.8, w: 8.8, d: 1.3 };
+  add(swept(plate(TOP.w, TOP.d, 0.12, 0.55)), wing, 0, TOP.y, TOP.z);
+  add(swept(plate(LOW.w, LOW.d, 0.12, 0.5)), wing, 0, LOW.y, LOW.z);
+  const roundelOuter = new THREE.CircleGeometry(0.5, 24).rotateX(-Math.PI / 2);
+  const roundelInner = new THREE.CircleGeometry(0.24, 24).rotateX(-Math.PI / 2);
+  for (const x of [-3.3, 3.3]) {
+    add(roundelOuter, cream, x, TOP.y + 0.066, zw(x, TOP.z));
+    add(roundelInner, roundel, x, TOP.y + 0.068, zw(x, TOP.z));
+  }
+  const underOuter = new THREE.CircleGeometry(0.42, 24).rotateX(Math.PI / 2);
+  const underInner = new THREE.CircleGeometry(0.2, 24).rotateX(Math.PI / 2);
+  for (const x of [-2.9, 2.9]) {
+    add(underOuter, cream, x, LOW.y - 0.066, zw(x, LOW.z));
+    add(underInner, roundel, x, LOW.y - 0.068, zw(x, LOW.z));
+  }
+  // Interplane struts and bracing wires at two chord stations, cabane N-struts from the cabin roof to the top wing
+  for (const s of [-1, 1]) for (const z of [-1.4, -0.55]) {
+    const x = s * 3.4;
+    rod(V(x, LOW.y + 0.05, zw(x, z)), V(x, TOP.y - 0.05, zw(x, z)), 0.045, wood, 8);
+    wire(V(s * 0.55, LOW.y + 0.05, zw(0.55, z)), V(s * 3.35, TOP.y - 0.05, zw(3.35, z)));
+    wire(V(s * 0.5, TOP.y - 0.05, zw(0.5, z)), V(s * 3.35, LOW.y + 0.05, zw(3.35, z)));
+  }
+  for (const s of [-1, 1]) {
+    for (const z of [-1.5, -0.75]) rod(V(s * 0.4, body(z)[1] + body(z)[3] - 0.01, z), V(s * 0.5, TOP.y - 0.05, z), 0.035, wood, 8);
+    rod(V(s * 0.4, body(-1.5)[1] + body(-1.5)[3] - 0.01, -1.5), V(s * 0.5, TOP.y - 0.05, -0.75), 0.03, wood, 8);
   }
 
-  // Spatted main gear: a teardrop fairing round each wheel (the tyre peeps out underneath) on a short faired leg
-  const spat = loft(smoothPts([
-    [-1.95, -1.14, 0.015, 0.03, 2], [-1.82, -1.14, 0.08, 0.2, 2.2], [-1.6, -1.14, 0.12, 0.33, 2.3], [-1.3, -1.14, 0.13, 0.38, 2.3],
-    [-1.0, -1.13, 0.125, 0.37, 2.3], [-0.65, -1.11, 0.1, 0.27, 2.2], [-0.35, -1.08, 0.055, 0.14, 2], [-0.1, -1.06, 0.01, 0.02, 2],
-  ]), -1.95, -0.1, 12, 12);
-  const leg = new THREE.CylinderGeometry(0.055, 0.075, 0.5, 10).scale(1, 1, 2.4);
+  // Ailerons on the lower wing, outboard, hinged along the swept trailing edge (the pivot is yawed to follow it,
+  // so its x axis runs along the hinge and syncPlane's rotation.x works it)
+  const ailGeo = plate(2.3, 0.34, 0.07, 0.15).translate(0, 0, 0.17), ail = {};
   for (const s of [-1, 1]) {
-    add(spat, cream, s * 0.9, 0, 0);
-    add(leg, cream, s * 0.9, -0.55, -1.15);
+    const x = s * 3.1;
+    ail[s] = pivot(x, LOW.y, zw(x, LOW.z + LOW.d / 2));
+    ail[s].rotation.order = 'YXZ';
+    ail[s].rotation.y = -s * SWEEP;
+    add(ailGeo, roundel, 0, 0, 0, ail[s]);
   }
-  rod(V(0, body(3.8)[1] - body(3.8)[3] + 0.04, 3.8), V(0, -0.6, 3.92), 0.03, dark); // tail wheel leg
+
+  // Split-axle main gear: a V of legs from the lower longerons to each hub, a half-axle hinged under the belly,
+  // then the tail wheel leg
+  for (const s of [-1, 1]) {
+    const hub = V(s * 0.82, -1.25, -1.2);
+    rod(V(s * 0.46, -0.5, -1.75), hub, 0.035, dark);
+    rod(V(s * 0.46, -0.48, -0.7), hub, 0.035, dark);
+    rod(V(s * 0.04, -0.54, -1.2), hub, 0.03, metal);
+  }
+  rod(V(0, body(3.8)[1] - body(3.8)[3] + 0.03, 3.8), V(0, -0.6, 3.92), 0.03, dark);
 
   return {
     ailL: ail[-1], ailR: ail[1],
-    eye: V(0, 0.93, 0.5), // the pilot's eyes, under the canopy, looking down the long nose
-    openCockpit: false,
-    exhausts: [V(-0.45, 0.12, -1.5), V(0.45, 0.12, -1.5)],
+    exhausts: [V(-0.6, -0.44, -0.6), V(-0.6, -0.44, -0.6)], // both smoke points at the single stub, port side
   };
 }
 
-const AIRFRAMES = { biplane, parasol, bush, racer };
+const AIRFRAMES = { biplane, parasol, bush, hopper };
 
 export function syncPlane(p, f, dt) {
   p.t += dt;

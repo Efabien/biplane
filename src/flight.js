@@ -20,10 +20,9 @@ export const AIRCRAFT = {
   // Bush plane: a big light wing and a lot of drag. ~140 km/h top speed, ~50 km/h stall, off in ~35 m at ~60 km/h,
   // a strong climb when slow and a stall that barely bites
   bush: aircraft({ THRUST: 6.0, KD: 0.0038, KI: 0.0015, KL: 0.032, CL0: 0.25, CLA: 5, STALL: 0.28, DROP: 1.0, FLOOR: 0.7, SLOW: 13.5, ROLL: 2.0, VAPP: 23, TAPP: 0.33 }),
-  // Racer: small, thin wing and very little drag. ~260 km/h top speed, ~95 km/h stall that bites hard (sharp
-  // drop, low floor: holding full back stick just after liftoff settles it back), off in ~130 m at ~110 km/h with
-  // back pressure, a quick roll; approaches at 133 km/h
-  racer: aircraft({ THRUST: 4.4, KD: 0.0008, KI: 0.0012, KL: 0.01005, CL0: 0.2, CLA: 5, STALL: 0.24, DROP: 6, FLOOR: 0.25, SLOW: 27, ROLL: 3.0, VAPP: 37, TAPP: 0.3 }),
+  // Island hopper: a heavy cabin biplane with a big draggy wing. ~150 km/h top speed, ~57 km/h stall, off in ~60 m
+  // at ~70 km/h, a sedate climb and roll, a soft stall; approaches at 90 km/h with a little more power
+  hopper: aircraft({ THRUST: 3.6, KD: 0.002, KI: 0.0015, KL: 0.0235, CL0: 0.25, CLA: 5, STALL: 0.28, DROP: 1.5, FLOOR: 0.55, SLOW: 17, ROLL: 1.8, VAPP: 25, TAPP: 0.35 }),
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
