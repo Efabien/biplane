@@ -171,7 +171,7 @@ function applyFlags(flags) {
   if (flags.scarf) for (const p of Object.values(planes)) p.scarf.children[0].material.color.setHex(0xc0473a);
 }
 adventure = createAdventure({
-  scene, world, flight,
+  scene, world, flight, sound,
   fly: (start) => takeOff('red', start),
   setTime: (name) => { timeNow = name ?? settings.time; world.setTime(timeNow); updateLamp(); },
   onFlags: applyFlags,
@@ -321,7 +321,7 @@ function frame() {
   pointScale.value = renderer.getDrawingBufferSize(_size).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
   world.update(live || !started ? dt : 0, camera, flight.pos);
   if (live || !started) { landmarks.update(dt, time.value, camera.position); vale.update(dt, camera.position); harbours.update(time.value); life.update(dt, camera.position); }
-  sound.update(flight, !live);
+  sound.update(flight, !live, adventure.holdsPlane);
   nav.update(dt, flight, adventure.target);
   cover.update(camera.position);
   hud.update(dt, flight, world, adventure.target, `WIND ${wind.speed ? `${wind.from}° ${Math.round(wind.now)} m/s` : 'CALM'}\nGFX ${auto ? 'auto · ' : ''}${QUALITY[level].name}${fps ? ` · ${fps} fps` : ''}`);

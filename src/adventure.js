@@ -305,7 +305,7 @@ function makeBeacon() {
 
 // deps: fly(start) puts the mail plane on a strip; setTime(name | null) overrides the time of day (null = the menu's);
 // onFlags(flags) is told whenever the world changes (lighthouse lit, new scarf)
-export function createAdventure({ scene, world, flight, fly, setTime, onFlags }) {
+export function createAdventure({ scene, world, flight, fly, setTime, onFlags, sound = { fx() {} } }) {
   let mode = 'off', chapter = 0, mission = 0, step = 0, act = null, onCard = null, circle = null;
   let drop = null; const dropped = []; // the parcel falling for the current drop step; parcels lying where they came down
   let flags = load().flags;
@@ -322,6 +322,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
     $('.stamp').textContent = stamp;
     $('.stamp').hidden = !stamp;
     $('button').textContent = button;
+    sound.fx('card');
     card.hidden = false;
     document.activeElement?.blur?.(); // Enter is handled once, by update(); a focused button would fire a second time
     onCard = then;
@@ -425,6 +426,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
       g.position.lerpVectors(d.from, d.to, t / d.walk);
       yaw = Math.atan2(d.to.x - d.from.x, d.to.z - d.from.z);
       swing = Math.sin(t * 9) * 0.6;
+      if (Math.sign(swing) !== d.sw) { d.sw = Math.sign(swing); sound.fx('step', { at: g.position, soft: world.stripAt(g.position.x, g.position.z)?.surface !== 'dirt' }); }
       if (d.kind === 'pickup') { armsUp = 0.9; swing *= 0.3; d.parcel.position.copy(hands(ground(g.position.x, g.position.z))); d.parcel.rotation.y = yaw; }
     } else {
       g.position.copy(d.to);
@@ -439,6 +441,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
       d.parcel.position.lerpVectors(a, b, k);
       d.parcel.position.y += Math.sin(k * Math.PI) * 1.6;
       d.parcel.rotation.set(0, yaw + k * 3, 0);
+      if (k >= 1 && !d.thud) { d.thud = true; sound.fx('thump'); }
       if (u > 3.8 && mode === 'scene') stepDone(d.kind === 'land' ? d.stamp : '');
     }
     g.position.y = ground(g.position.x, g.position.z) + hop;
@@ -463,6 +466,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
       d.t += dt;
       const open = THREE.MathUtils.smoothstep(d.t, 0.3, 1.1);
       d.canopy.scale.setScalar(0.05 + open * 0.95);
+      if (open >= 0.5 && !d.cloth) { d.cloth = true; sound.fx('cloth', { at: g.position }); }
       const k = 1 - Math.exp(-dt * (0.4 + open * 2.2));
       d.vel.x -= d.vel.x * k; d.vel.z -= d.vel.z * k;
       if (open < 0.5) d.vel.y -= 9.8 * dt; // free fall until the chute bites, then its steady sink
@@ -476,6 +480,7 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
         g.position.y = floor + 0.2;
         g.rotation.z = 0;
         d.canopy.scale.set(1, 0.25, 1); // the chute collapses over the parcel
+        sound.fx('thump', { at: g.position });
         dropped.push({ g, t: 0 });
         drop = null;
         if (mode === 'fly' && S().type === 'drop') stepDone();

@@ -1,12 +1,15 @@
+import * as THREE from 'three';
 import { wind } from './style.js';
 
-// Engine hum and wind noise, synthesized with WebAudio (no files). Starts on the first user gesture.
-export function createSound() {
-  let ctx = null, master, engine, filter, osc1, osc2, chugLfo, windGain, windFilter;
+// Engine hum, wind noise and the delivery-scene effects, synthesized with WebAudio (no files). Starts on the first
+// user gesture. `makeCtx` lets a test render into an OfflineAudioContext.
+export function createSound(makeCtx = () => new AudioContext()) {
+  let ctx = null, master, engine, filter, osc1, osc2, chugLfo, windGain, windFilter, white;
   let enabled = true;
+  const here = new THREE.Vector3(); // the plane, for distance attenuation of effects
 
   function init() {
-    ctx = new AudioContext();
+    ctx = makeCtx();
     master = ctx.createGain();
     master.gain.value = 0;
     master.connect(ctx.destination);
@@ -34,6 +37,44 @@ export function createSound() {
     noise.connect(windFilter); windFilter.connect(windGain); windGain.connect(master);
 
     for (const o of [osc1, osc2, chugLfo, noise]) o.start();
+
+    white = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); // 1 s of white noise, the raw material of the effects
+    const w = white.getChannelData(0);
+    for (let i = 0; i < w.length; i++) w[i] = Math.random() * 2 - 1;
+  }
+
+  // One-shot effects: a filtered noise burst and/or a swept tone, each with a linear attack and exponential decay
+  // (seconds). `at` (a Vector3) attenuates by distance to the plane; `vol` scales; `soft` is a step on grass or sand.
+  function fx(name, { at, vol = 1, soft = false } = {}) {
+    if (!ctx || !enabled) return;
+    if (at) vol *= Math.max(0.1, 1 - here.distanceTo(at) / 250);
+    const t = ctx.currentTime, out = ctx.createGain();
+    out.gain.value = vol;
+    out.connect(master);
+    const env = (g, peak, a, d) => { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.001, t + a + d); };
+    const burst = (type, f, q, peak, a, d) => {
+      const s = ctx.createBufferSource(), bf = ctx.createBiquadFilter(), g = ctx.createGain();
+      s.buffer = white; s.loopStart = Math.random() * 0.5; s.loop = true; // a random slice, so repeated hits differ
+      bf.type = type; bf.frequency.value = f; bf.Q.value = q;
+      env(g, peak, a, d);
+      s.connect(bf); bf.connect(g); g.connect(out);
+      s.start(t, s.loopStart); s.stop(t + a + d + 0.05);
+    };
+    const tone = (type, f0, f1, peak, a, d, delay = 0) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(), t0 = t + delay;
+      o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + a + d);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(peak, t0 + a); g.gain.exponentialRampToValueAtTime(0.001, t0 + a + d);
+      o.connect(g); g.connect(out);
+      o.start(t0); o.stop(t0 + a + d + 0.05);
+    };
+    const r = 0.85 + Math.random() * 0.3;
+    switch (name) {
+      case 'step': burst('lowpass', (soft ? 420 : 800) * r, 1.2, soft ? 0.38 : 0.4, 0.004, 0.06); break;
+      case 'thump': tone('triangle', 120 * r, 45, 0.35, 0.004, 0.12); burst('lowpass', 1800, 0.7, 0.12, 0.002, 0.03); break;
+      case 'cloth': burst('bandpass', 1600, 0.9, 0.3, 0.14, 0.18); burst('highpass', 2800, 0.6, 0.22, 0.004, 0.05); break; // swell, then the snap
+      case 'card': burst('bandpass', 3800, 1.4, 0.1, 0.03, 0.12); break;
+      case 'cheer': tone('sine', 740, 760, 0.07, 0.03, 0.12); tone('sine', 990, 1010, 0.07, 0.03, 0.22, 0.14); break; // a two-note "hey!"
+    }
   }
 
   return {
@@ -43,17 +84,20 @@ export function createSound() {
     },
     get enabled() { return enabled; },
     setEnabled(on) { enabled = on; },
-    update(flight, paused) {
+    fx,
+    // `held`: a story card or a delivery scene holds the plane, and the engine idles meanwhile
+    update(flight, paused, held = false) {
       if (!ctx) return;
-      const t = ctx.currentTime, crashed = flight.state === 'crashed';
+      here.copy(flight.pos);
+      const t = ctx.currentTime, crashed = flight.state === 'crashed', throttle = held ? 0 : flight.throttle;
       master.gain.setTargetAtTime(enabled && !paused ? 0.5 : 0, t, 0.15);
-      const rpm = crashed ? 0 : 600 + flight.throttle * 1900 + Math.min(flight.airspeed, 55) * 18;
+      const rpm = crashed ? 0 : 600 + throttle * 1900 + Math.min(flight.airspeed, 55) * 18;
       const fire = Math.max(20, (rpm / 60) * 3.5); // 7-cylinder four-stroke: 3.5 firing pulses per revolution
       osc1.frequency.setTargetAtTime(fire, t, 0.12);
       osc2.frequency.setTargetAtTime(fire / 2, t, 0.12);
       chugLfo.frequency.setTargetAtTime(Math.max(4, rpm / 60), t, 0.12);
-      filter.frequency.setTargetAtTime(280 + flight.throttle * 900, t, 0.12);
-      engine.gain.setTargetAtTime(crashed ? 0 : 0.1 + flight.throttle * 0.1, t, 0.25);
+      filter.frequency.setTargetAtTime(280 + throttle * 900, t, 0.12);
+      engine.gain.setTargetAtTime(crashed ? 0 : 0.1 + throttle * 0.1, t, 0.25);
       const air = flight.airspeed, gust = wind.now / 12;
       windGain.gain.setTargetAtTime(Math.min(0.55, (air / 50) ** 2 * 0.35 + gust * 0.08), t, 0.2);
       windFilter.frequency.setTargetAtTime(250 + air * 22, t, 0.2);
