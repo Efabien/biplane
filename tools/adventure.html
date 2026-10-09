@@ -2,9 +2,13 @@
 <!-- Adventure playthrough: drives src/adventure.js with a scripted plane through every chapter, from a fresh save,
      and prints each step and story card; then checks that an old "finished everything" save unlocks newer chapters.
      Run with tools/adventure.sh (prints the log), or open it in a browser (served over http). A step the script can't
-     complete shows as "STUCK"; the title is "DONE ok" or "DONE FAIL". -->
+     complete shows as "STUCK"; the title is "DONE ok" or "DONE FAIL".
+     Screenshot of a drop scene: ?shot=<part of the drop step's label>&t=<seconds after touchdown>[&a=<camera bearing rad>
+     &d=<distance m>&y=<height above the spot m>&v=<plane speed m/s, sets the drift>&w=&h=] plays up to that drop, stops there and renders it
+     (title "DONE shot"), for headless Chrome --screenshot. -->
 <html><head><meta charset="utf-8">
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+<style>canvas { display: block; }</style>
 </head><body>
 <div id="story" hidden><div class="letter"><p class="kicker"></p><h2></h2><p class="body"></p><p class="stamp" hidden></p><button></button></div></div>
 <pre id="log"></pre>
@@ -12,10 +16,32 @@
 import * as THREE from 'three';
 import { buildWorld, STRIPS } from '../src/world.js';
 import { createAdventure } from '../src/adventure.js';
+import { pointScale } from '../src/style.js';
+import { buildLandmarks } from '../src/landmarks.js';
+import { buildVale } from '../src/vale.js';
+import { buildHarbours } from '../src/harbours.js';
 const log = [], KEY = 'biplane.adventure.v1';
+const q = new URLSearchParams(location.search), shot = q.get('shot');
 let ok = true;
 try {
   const scene = new THREE.Scene(), world = buildWorld(scene);
+  if (shot) { // what a drop lands on or beside: the sea fort and offshore light, the vale's cabins, the harbours
+    const smoke = { spawn() {} };
+    buildLandmarks(scene, smoke); buildVale(scene, smoke); buildHarbours(scene);
+  }
+  const render = (x, z) => { // one frame of the scene around (x, z), then the page is done
+    const w = +(q.get('w') ?? 1280), h = +(q.get('h') ?? 800), r = new THREE.WebGLRenderer({ antialias: true });
+    r.setSize(w, h); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.prepend(r.domElement);
+    document.getElementById('log').hidden = true;
+    const cam = new THREE.PerspectiveCamera(50, w / h, 0.3, 9000), a = +(q.get('a') ?? 0.8), d = +(q.get('d') ?? 12);
+    const gy = Math.max(world.groundAt(x, z), 0) + +(q.get('y') ?? 0);
+    cam.position.set(x + Math.sin(a) * d, gy + d * 0.4, z + Math.cos(a) * d);
+    cam.lookAt(x, gy + 1, z);
+    pointScale.value = h / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+    world.update(0.016, cam, cam.position);
+    r.render(scene, cam);
+  };
   const flight = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), q: new THREE.Quaternion(), state: 'ground', heading: 0, throttle: 0, speed: 0, flown: false };
   const fly = (st) => { flight.pos.set(st.strip.x, st.strip.h, st.strip.z); Object.assign(flight, { state: 'ground', flown: false, speed: 0 }); };
   const card = document.getElementById('story'), input = { consume: () => false };
@@ -41,11 +67,13 @@ try {
         flight.state = 'air'; log.push('  ' + tg.label.replace(/ · \d+%$/, ''));
         for (let i = 0; i <= 40; i++) { const a = (i / 40) * Math.PI * 2.2; flight.pos.set(tg.x + Math.cos(a) * 150, 150, tg.z + Math.sin(a) * 150); tick(adv, 1); if (!card.hidden || adv.target?.label !== tg.label.replace(/ · \d+%$/, '') && !adv.target?.label.startsWith('Circle')) break; }
       } else { // pass / drop: over the point, 40 m up, then fly on while a parcel floats down
-        flight.state = 'air'; flight.pos.set(tg.x, Math.max(world.groundAt(tg.x, tg.z), 0) + 40, tg.z); flight.vel.set(35, 0, 0);
+        const mine = shot && tg.label.includes(shot); // the drop to photograph: slow, so the parcel lands by the spot
+        flight.state = 'air'; flight.pos.set(tg.x, Math.max(world.groundAt(tg.x, tg.z), 0) + 40, tg.z); flight.vel.set(mine ? +(q.get('v') ?? 12) : 35, 0, 0);
         log.push('  over: ' + tg.label); tick(adv, 1);
         let t = 0;
         while (adv.target?.label === 'Parcel away!' && t < 60) { tick(adv, 1); t += 0.05; }
         if (t) log.push(`    parcel down after ${t.toFixed(1)} s`);
+        if (mine) { tick(adv, Math.round(+(q.get('t') ?? 4) / 0.05)); render(tg.x, tg.z); document.title = 'DONE shot'; throw 'shot'; }
       }
       if (adv.target && adv.target.label === tg.label && card.hidden) { log.push('  STUCK at: ' + tg.label); ok = false; break; }
     }
@@ -60,7 +88,7 @@ try {
   // an old save that had finished everything before `through` existed (2 chapters): the next chapter unlocks
   localStorage.setItem(KEY, JSON.stringify({ chapter: 0, mission: 0, done: true, flags: { lamp: true } }));
   log.push('old finished save -> menu: ' + make().summary());
-} catch (e) { log.push('ERR ' + e.message + '\n' + e.stack); ok = false; }
+} catch (e) { if (e !== 'shot') { log.push('ERR ' + e.message + '\n' + e.stack); ok = false; } }
 document.getElementById('log').textContent = log.join('\n');
-document.title = ok ? 'DONE ok' : 'DONE FAIL';
+if (document.title !== 'DONE shot') document.title = ok ? 'DONE ok' : 'DONE FAIL';
 </script></body></html>
