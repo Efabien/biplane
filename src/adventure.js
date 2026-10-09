@@ -22,13 +22,17 @@ const PEOPLE = {
   bram: { name: 'Bram', shirt: 0x6b7a3a, legs: 0x4a4038, hat: 0x4a5a2a, style: 'cap' },
   nell: { name: 'Nell', shirt: 0xe0a33a, legs: 0x3f6f8a, hat: 0xf2e8cc, style: 'straw' },
   hilde: { name: 'Hilde', shirt: 0x9a3a2e, legs: 0x3a3a3a, hat: 0x2e4a3a, style: 'cap' },
-  // only ever met from the air (parcels are dropped to them)
-  garrison: { name: 'The sea fort' }, oskar: { name: 'Oskar' }, lindqvists: { name: 'The Lindqvists' }, per: { name: 'Old Per' }, wren: { name: 'Wren' },
+  // only ever met from the air (parcels are dropped to them); `kids` = several small figures instead of one
+  garrison: { name: 'The sea fort', shirt: 0x2f3f5c, legs: 0x3a3230, hat: 0x8a2a2a, style: 'cap' },
+  oskar: { name: 'Oskar', shirt: 0x3a5a4a, legs: 0x2e2a28, hat: 0x1f2a40, style: 'cap' },
+  lindqvists: { name: 'The Lindqvists', kids: [{ shirt: 0xd8a040, legs: 0x4a6a8a, hat: 0xc04030, style: 'cap', scale: 0.7, speed: 3.2 }, { shirt: 0x4a8ac0, legs: 0x5a4038, hat: 0xe0c070, style: 'bun', scale: 0.7, speed: 2.7 }] },
+  per: { name: 'Old Per', shirt: 0x8a7a5a, legs: 0x3a3a3a, hat: 0xd8d4cc, style: 'straw' },
+  wren: { name: 'Wren', shirt: 0x9a6a9a, legs: 0x3f4f6a, hat: 0x5a3a26, style: 'bun' },
 };
 
 // Steps: 'land' (deliver to `who`), 'pickup' (`who` loads the plane), 'pass' (fly near a point), 'circle' (loop around it),
 // 'drop' (fly over a point within `r`, lower than `agl` metres above the ground or sea: a parcel floats down on a parachute;
-// `deck` = a platform it can land on, e.g. the sea fort's).
+// `deck` = a platform it can land on, e.g. the sea fort's: { r, y, hub? } with `hub` the radius of the building in its middle).
 // `say` is the card after a step; the last step's card is the mission's `thanks`. `flag` is set when the step is done.
 const CHAPTERS = [
   {
@@ -138,7 +142,7 @@ const CHAPTERS = [
         start: home('Headland', -1),
         brief: 'Juniper hands you the first sack for the far north-east. "The old route goes by the sea fort. The garrison hasn\'t had letters in weeks. Then Nell on the atoll knows the way."\n\nThe fort stands in open water, west of here. Fly low over it and drop the post, then land on the Atoll sandbar.',
         steps: [
-          { type: 'drop', label: 'Drop the post on the sea fort', x: SEAFORT.x, z: SEAFORT.z, r: 90, agl: 70, deck: { r: 13.5, y: 13 }, who: 'garrison', say: 'A soldier on the ramparts waves both arms: post received. Then he points east. On to the atoll.' },
+          { type: 'drop', label: 'Drop the post on the sea fort', x: SEAFORT.x, z: SEAFORT.z, r: 90, agl: 70, deck: { r: 13.5, y: 13, hub: 6 }, who: 'garrison', say: 'A soldier on the ramparts waves both arms: post received. Then he points east. On to the atoll.' },
           { type: 'land', strip: 'Atoll sandbar', who: 'nell' },
         ],
         thanks: '"Post, out here?" Nell shades her eyes against the glare off the lagoon. "Then you\'ll be wanting the Pine Vale. North, past the stacks. Can\'t miss it: the whole island\'s one big forest."',
@@ -148,7 +152,7 @@ const CHAPTERS = [
         start: home('Atoll sandbar', 1),
         brief: 'Nell has a basket of smoked fish for Oskar, keeper of the offshore light on the shoal to the west. "He\'s got no landing, mind. You\'ll have to drop it."\n\nThen thread the sea stacks and land at the new strip in the Pine Vale.',
         steps: [
-          { type: 'drop', label: 'Drop the basket at the offshore light', x: SEA_LIGHT.x, z: SEA_LIGHT.z, r: 90, agl: 60, deck: { r: 7.4, y: 6.5 }, who: 'oskar', say: 'Oskar has the basket before the wind can take it, and waves his cap. Now north, through the stacks.' },
+          { type: 'drop', label: 'Drop the basket at the offshore light', x: SEA_LIGHT.x, z: SEA_LIGHT.z, r: 90, agl: 60, deck: { r: 7.4, y: 6.5, hub: 2.8 }, who: 'oskar', say: 'Oskar has the basket before the wind can take it, and waves his cap. Now north, through the stacks.' },
           { type: 'pass', label: 'Thread the sea stacks', x: 6080, z: 720, r: 160 },
           { type: 'land', strip: 'Pine Vale', who: 'hilde' },
         ],
@@ -271,7 +275,7 @@ function makeChute() {
   }
   g.add(canopy);
   g.traverse((o) => { o.castShadow = true; });
-  return { g, canopy };
+  return { g, canopy, parcel };
 }
 
 // Soft gold column marking the current objective, visible through the haze, fading near the top and up close
@@ -308,6 +312,7 @@ function makeBeacon() {
 export function createAdventure({ scene, world, flight, fly, setTime, onFlags }) {
   let mode = 'off', chapter = 0, mission = 0, step = 0, act = null, onCard = null, circle = null;
   let drop = null; const dropped = []; // the parcel falling for the current drop step; parcels lying where they came down
+  let recip = null; // whoever the current drop is for, waiting near the spot (see placeRecipients)
   let flags = load().flags;
   const beacon = makeBeacon();
   scene.add(beacon);
@@ -457,7 +462,11 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
     scene.add(c.g);
     drop = { ...c, vel: flight.vel.clone().multiplyScalar(0.8), t: 0, deck: S().deck, at: S() };
   }
+  // where a falling thing comes to rest: the step's deck (sea fort, offshore light), the ground, or the sea
+  const floorAt = (x, z, s) => (s.deck && Math.hypot(x - s.x, z - s.z) < s.deck.r ? s.deck.y : Math.max(world.groundAt(x, z), 0));
   function updateDrops(dt) {
+    if (mode === 'fly' && S().type === 'drop' && recip?.step !== S()) { clearRecip(); placeRecipients(S()); }
+    else if (recip && recip.step !== S()) clearRecip();
     if (drop) {
       const d = drop, g = d.g;
       d.t += dt;
@@ -470,24 +479,107 @@ export function createAdventure({ scene, world, flight, fly, setTime, onFlags })
       g.position.addScaledVector(d.vel, dt);
       g.rotation.y += dt * 0.6;
       g.rotation.z = Math.sin(d.t * 1.7) * 0.12 * open; // gentle swing under the canopy
-      let floor = Math.max(world.groundAt(g.position.x, g.position.z), 0); // ground, or the sea, or the landmark's deck
-      if (d.deck && Math.hypot(g.position.x - d.at.x, g.position.z - d.at.z) < d.deck.r) floor = d.deck.y;
+      const floor = floorAt(g.position.x, g.position.z, d.at);
       if (g.position.y <= floor + 0.2) {
         g.position.y = floor + 0.2;
         g.rotation.z = 0;
         d.canopy.scale.set(1, 0.25, 1); // the chute collapses over the parcel
-        dropped.push({ g, t: 0 });
+        dropped.push({ g }); // it stays for the rest of the mission (clearDrops), but not without end
+        if (dropped.length > 8) scene.remove(dropped.shift().g);
+        if (recip?.step === d.at) parcelDown(d);
         drop = null;
         if (mode === 'fly' && S().type === 'drop') stepDone();
       }
     }
-    for (let i = dropped.length - 1; i >= 0; i--) if ((dropped[i].t += dt) > 20) { scene.remove(dropped[i].g); dropped.splice(i, 1); }
+    if (recip) updateRecipients(dt);
   }
   function clearDrops() {
     if (drop) scene.remove(drop.g);
     for (const d of dropped) scene.remove(d.g);
     drop = null;
     dropped.length = 0;
+    clearRecip();
+  }
+
+  // ---- drop recipients: they wait by the spot and wave at the plane; when the parcel lands they run for it and hold it up ----
+  function placeRecipients(s) {
+    const who = PEOPLE[s.who] ?? {}, looks = who.kids ?? [who], spots = [];
+    if (s.deck) for (let i = 0; i < looks.length; i++) { const a = Math.PI / 4 + i * 0.6; spots.push({ x: s.x + Math.cos(a) * s.deck.r * 0.6, z: s.z + Math.sin(a) * s.deck.r * 0.6 }); }
+    else { // dry, level ground 6-10 m from the spot, outside the cabin (or whatever stands there)
+      for (let r = 6; r <= 10 && spots.length < looks.length; r += 2)
+        for (let i = 0; i < 12 && spots.length < looks.length; i++) {
+          const a = (i / 12) * Math.PI * 2, x = s.x + Math.cos(a) * r, z = s.z + Math.sin(a) * r, h = world.groundAt(x, z);
+          if (h > 0.5 && world.slopeAt(x, z) < 0.3 && !world.hitObstacle(x, h + 1, z)) spots.push({ x, z });
+        }
+      while (spots.length < looks.length) spots.push({ x: s.x, z: s.z });
+    }
+    const people = looks.map((look, i) => {
+      const v = makeVillager({ shirt: 0x6a7f9a, legs: 0x4a4038, hat: 0x3a4a5a, style: 'cap', ...look }), scale = look.scale ?? 1;
+      v.g.scale.setScalar(scale);
+      v.g.position.set(spots[i].x, floorAt(spots[i].x, spots[i].z, s), spots[i].z);
+      scene.add(v.g);
+      return { v, scale, speed: look.speed ?? 3, phase: 'wait', t: 0, seed: i * 2.3, yaw: 0 };
+    });
+    recip = { step: s, people, parcel: null, holder: null, t: 0 };
+  }
+  function parcelDown(d) { // if the parcel is on the deck or on dry land they run for it; in the sea (or on the roof) it is beyond them
+    const g = d.g, s = d.at, dist = Math.hypot(g.position.x - s.x, g.position.z - s.z);
+    const dry = s.deck ? dist < s.deck.r && dist > (s.deck.hub ?? 0) : world.groundAt(g.position.x, g.position.z) > 0.5;
+    if (!dry) return;
+    g.remove(d.parcel); // the parcel leaves the chute so it can be carried; the canopy stays where it fell, flat on the ground
+    d.canopy.scale.set(1, 0.1, 1);
+    d.parcel.position.copy(g.position);
+    scene.add(d.parcel);
+    recip.parcel = d.parcel;
+    for (const p of recip.people) { p.phase = 'run'; p.t = 0; }
+  }
+  function updateRecipients(dt) {
+    const r = recip, pc = r.parcel, facePlane = (g) => Math.atan2(flight.pos.x - g.position.x, flight.pos.z - g.position.z);
+    r.t += dt;
+    for (const p of r.people) {
+      const v = p.v, g = v.g;
+      let swing = 0, armsUp = 0, wave = 0, sway = 0, carry = null; // carry: the parcel's height above the feet and forward offset
+      p.t += dt;
+      if (p.phase === 'wait') { // face the plane, wave now and then
+        p.yaw = facePlane(g);
+        const w = (r.t + p.seed) % 5;
+        if (w < 1.6) wave = Math.sin(w * 10) * 0.5 + 2.4;
+      } else if (p.phase === 'run') { // the first to arrive takes it, the others stop short and cheer
+        const dx = pc.position.x - g.position.x, dz = pc.position.z - g.position.z, dist = Math.hypot(dx, dz), stop = r.holder ? 1.8 : p.scale; // at the canopy's edge
+        p.yaw = Math.atan2(dx, dz);
+        if (dist > stop) { const m = Math.min(dist - stop, p.speed * dt); g.position.x += (dx / dist) * m; g.position.z += (dz / dist) * m; swing = Math.sin(p.t * 12) * 0.9; }
+        else { p.phase = r.holder ? 'cheer' : 'lift'; p.t = 0; r.holder ??= p; }
+        const hub = r.step.deck?.hub; // round the building in the middle of a deck rather than through it
+        if (hub) { const hx = g.position.x - r.step.x, hz = g.position.z - r.step.z, hd = Math.hypot(hx, hz); if (hd < hub + 0.5) { g.position.x = r.step.x + (hx / hd) * (hub + 0.5); g.position.z = r.step.z + (hz / hd) * (hub + 0.5); } }
+      } else if (p.phase === 'lift') { // reach for the parcel where it lies, a pace ahead, and raise it overhead
+        const k = Math.min(1, p.t / 0.7);
+        armsUp = 0.6 + k * 1.7;
+        carry = [0.2 + k * 2, 1 - k * 0.9];
+        if (k >= 1) { p.phase = 'cheer'; p.t = 0; }
+      } else if (p.phase === 'cheer') { // both arms up, swaying, for a few seconds
+        armsUp = 2.3; sway = Math.sin(p.t * 6) * 0.35;
+        if (r.holder === p) carry = [2.2, 0.1];
+        if (p.t > 3) { p.phase = r.holder === p ? 'hold' : 'stand'; p.t = 0; }
+      } else { // hold: the parcel at the chest; stand: arms down; both watch the plane go
+        p.yaw = facePlane(g);
+        if (p.phase === 'hold') { armsUp = 0.9; carry = [1.15, 0.35]; }
+      }
+      g.position.y = floorAt(g.position.x, g.position.z, r.step);
+      g.rotation.y = p.yaw;
+      v.legL.rotation.x = swing; v.legR.rotation.x = -swing;
+      v.armL.rotation.x = -swing * 0.7 - armsUp * 1.3; v.armR.rotation.x = swing * 0.7 - armsUp * 1.3;
+      v.armL.rotation.z = -sway; v.armR.rotation.z = wave + sway;
+      if (carry) {
+        pc.position.set(g.position.x + Math.sin(p.yaw) * carry[1] * p.scale, g.position.y + carry[0] * p.scale, g.position.z + Math.cos(p.yaw) * carry[1] * p.scale);
+        pc.rotation.set(0, p.yaw, 0);
+      }
+    }
+  }
+  function clearRecip() {
+    if (!recip) return;
+    for (const p of recip.people) scene.remove(p.v.g);
+    if (recip.parcel) scene.remove(recip.parcel);
+    recip = null;
   }
 
   function clearAct() {
