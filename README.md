@@ -40,7 +40,7 @@ Enter or Space closes story cards.
 
 ## The world
 
-About 10 km × 4 km of islands, west to east:
+About 11 km × 6 km of islands, west to east:
 
 - **The home island:** the Airfield (dirt runway), a village with a windmill, a lighthouse, a castle on a ridge,
   a lake under a floating sky ruin, a railway viaduct with a steam train, and snowy mountains. Strips: Airfield,
@@ -50,11 +50,13 @@ About 10 km × 4 km of islands, west to east:
   crater hamlet whose Caldera strip you reach through a gap in the rim.
 - **The sea stacks** and an **offshore lighthouse**.
 - **The coral atoll,** with the Atoll sandbar strip and a fisher's stilt hut.
-- **Pine Vale,** in the north-east: a spruce-dark river valley with log cabins, a waterfall off a hanging valley,
-  and the Pine Vale strip. Best seen at Twilight, flying up the valley toward the sunset.
+- **The Fells,** in the north-east, as big as the home island: the Pine Vale, a spruce-dark river valley with log
+  cabins, a waterfall off a hanging valley and the Pine Vale strip (best seen at Twilight, flying up the valley toward
+  the sunset); above its north wall a heather moor with deer, the snow-capped High Fell, a notch in the wall that leads
+  through a glen down to a fjord, and the Fjord head strip at the water's edge, where Sten keeps the mail boat.
 
-Along the way: clouds with shadows, sailboats, sheep, birds, chimney smoke, moored boats, fireflies in the low light,
-and a lighthouse beam that stays lit at dusk once you've earned it in the adventure.
+Along the way: clouds with shadows, sailboats, sheep, deer that bolt when you buzz them, birds, chimney smoke, moored
+boats, fireflies in the low light, and a lighthouse beam that stays lit at dusk once you've earned it in the adventure.
 
 ## Island Air Mail (adventure)
 
@@ -63,8 +65,9 @@ Cosy deliveries with no timers and no failing. A crash just puts you back at the
 1. **The New Mail Pilot:** four deliveries around the home island and up the volcano.
 2. **Harvest Season:** plums, lamp oil, a castle fair, and a scarf. Rewards change the world: the lighthouse is
    lit at dusk, and the pilot gets a red scarf.
-3. **Letters to the Vale:** the sea fort, the atoll, the offshore light and the Pine Vale's cabins. Places with
-   nowhere to land get their parcel dropped: fly low over them and it floats down on a parachute.
+3. **Letters to the Vale:** the sea fort, the atoll, the offshore light, the Pine Vale's cabins and the fjord. Places
+   with nowhere to land get their parcel dropped: fly low over them and it floats down on a parachute. The cabin round
+   goes up the valley, through the notch and down the glen to the Fjord head strip, and the lantern run comes back.
 
 ## Graphics and performance
 

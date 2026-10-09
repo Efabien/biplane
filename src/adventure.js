@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { STRIPS, LIGHTHOUSE, CASTLE, VOLCANO, SEAFORT, SEA_LIGHT, VALE, VALE_CABINS, DOORS, valeUV, valeXZ } from './world.js';
+import { STRIPS, LIGHTHOUSE, CASTLE, VOLCANO, SEAFORT, SEA_LIGHT, VALE, VALE_CABINS, NOTCH, DOORS, valeUV, valeXZ } from './world.js';
 import { paint } from './style.js';
 
 // Adventure mode, "Island Air Mail": cosy chapters of deliveries. No timers and no failing: a crash just puts you
@@ -9,8 +9,8 @@ const SAVE_KEY = 'biplane.adventure.v1';
 const strip = (name) => STRIPS.find((s) => s.name === name);
 const home = (name, dir) => ({ strip: strip(name), dir });
 const RIM_GAP = { x: VOLCANO.x + VOLCANO.bx * 700, z: VOLCANO.z + VOLCANO.bz * 700 };
-// Pine Vale landmarks: the cabin nearest a distance up the valley, and the pool in front of the waterfall
-const cabin = (u) => { const c = VALE_CABINS.reduce((a, b) => (Math.abs(valeUV(b.x, b.z)[0] - u) < Math.abs(valeUV(a.x, a.z)[0] - u) ? b : a)); return { x: c.x, z: c.z }; };
+// Pine Vale landmarks: the valley cabin nearest a distance up the valley, and the pool in front of the waterfall
+const cabin = (u) => { const c = VALE_CABINS.filter((c) => c.vale).reduce((a, b) => (Math.abs(valeUV(b.x, b.z)[0] - u) < Math.abs(valeUV(a.x, a.z)[0] - u) ? b : a)); return { x: c.x, z: c.z }; };
 const [fallX, fallZ] = valeXZ(VALE.fall - 160, 0);
 
 // Villagers: shirt, trousers, hat colour + hat style ('straw' | 'cap' | 'bun')
@@ -22,6 +22,7 @@ const PEOPLE = {
   bram: { name: 'Bram', shirt: 0x6b7a3a, legs: 0x4a4038, hat: 0x4a5a2a, style: 'cap' },
   nell: { name: 'Nell', shirt: 0xe0a33a, legs: 0x3f6f8a, hat: 0xf2e8cc, style: 'straw' },
   hilde: { name: 'Hilde', shirt: 0x9a3a2e, legs: 0x3a3a3a, hat: 0x2e4a3a, style: 'cap' },
+  sten: { name: 'Sten', shirt: 0x3a5a7a, legs: 0x3a3a3a, hat: 0x2a3a4a, style: 'cap' },
   // only ever met from the air (parcels are dropped to them); `kids` = several small figures instead of one
   garrison: { name: 'The sea fort', shirt: 0x2f3f5c, legs: 0x3a3230, hat: 0x8a2a2a, style: 'cap' },
   oskar: { name: 'Oskar', shirt: 0x3a5a4a, legs: 0x2e2a28, hat: 0x1f2a40, style: 'cap' },
@@ -135,7 +136,7 @@ const CHAPTERS = [
     intro: 'Far out in the north-east, past the sea stacks, there is a valley so thick with spruce it looks black from the air. Settlers have built log cabins along its river, and not one letter has reached them.\n\nSome of this post goes where no plane can land. Fly low over the spot and let the parcel go: it floats down on a little parachute.',
     final: {
       title: 'Mail Pilot of the Far Isles',
-      body: 'The Pine Vale has a post round now: fort, light, atoll, and every cabin up the river.\n\nOn still evenings the settlers leave their lamps in the windows, so the mail plane can find its way home up the valley.',
+      body: 'The Fells have a post round now: fort, light, atoll, every cabin up the river, and Sten\'s landing at the head of the fjord.\n\nOn still evenings the settlers leave their lamps in the windows, so the mail plane can find its way home up the valley.',
     },
     missions: [
       {
@@ -162,21 +163,23 @@ const CHAPTERS = [
       {
         title: 'Cabin Rounds',
         start: home('Pine Vale', -1),
-        brief: 'Hilde sorts the sack on a stump: a parcel for the Lindqvists by the river mouth, one for old Per in the middle of the valley, and one for the cabin that looks out at the waterfall.\n\nNone of them has a landing strip. Drop each parcel low over its cabin, then come back to the strip.',
+        brief: 'Hilde sorts the sack on a stump: a parcel for the Lindqvists by the river mouth, one for old Per in the middle of the valley, and one for the cabin that looks out at the waterfall. The rest is for Sten, who rows the post round the north of the island from the fjord.\n\nNone of the cabins has a landing strip. Drop each parcel low over its cabin, then turn north through the notch in the valley wall and follow the glen down to the strip at the head of the fjord.',
         steps: [
           { type: 'drop', label: 'Drop to the Lindqvists\' cabin', ...cabin(150), r: 70, agl: 50, who: 'lindqvists', say: 'Two children race out of the cabin after the parachute before it even touches down.' },
           { type: 'drop', label: 'Drop to old Per\'s cabin', ...cabin(880), r: 70, agl: 50, who: 'per', say: 'Old Per is on his porch and catches it, first time, without getting up. Now the cabin by the waterfall.' },
-          { type: 'drop', label: 'Drop to the cabin by the falls', ...cabin(1170), r: 70, agl: 50, who: 'wren' },
-          { type: 'land', strip: 'Pine Vale', who: 'hilde' },
+          { type: 'drop', label: 'Drop to the cabin by the falls', ...cabin(1170), r: 70, agl: 50, who: 'wren', say: 'Wren waves a paintbrush from her porch. Now climb for the notch in the north wall, east of here, and the glen beyond it runs down to the fjord.' },
+          { type: 'pass', label: 'Fly through the notch', x: NOTCH.x, z: NOTCH.z, r: 160 },
+          { type: 'land', strip: 'Fjord head', who: 'sten' },
         ],
-        thanks: '"Per says it\'s the first letter he\'s had in eleven years." Hilde grins. "And Wren from the falls cabin has gone up to her lookout above the waterfall, to paint. She\'s asked for her lantern."',
+        thanks: 'Sten takes the sack down to his boat. "Per says it\'s the first letter he\'s had in eleven years. Word gets round." He looks at the sky. "And Wren has gone up to her lookout above the waterfall, to paint. She\'s asked for her lantern, and the light\'s going."',
       },
       {
         title: 'Lantern above the Falls',
-        start: home('Pine Vale', -1),
+        start: home('Fjord head', -1),
         time: 'twilight',
-        brief: 'Last light in the Pine Vale. Wren is painting at her lookout cabin on the ledge above the waterfall, and she\'ll need her lantern to find the path down.\n\nFly up the valley toward the falls, climb over the cliff and drop the lantern at the lookout, then come back down to land.',
+        brief: 'Last light on the Fells. Wren is painting at her lookout cabin on the ledge above the waterfall, and she\'ll need her lantern to find the path down.\n\nTake off down the fjord, climb back up the glen and through the notch into the Pine Vale, fly up the valley to the falls, climb over the cliff and drop the lantern at the lookout. Then come back down the valley and land at Hilde\'s strip by the river mouth.',
         steps: [
+          { type: 'pass', label: 'Climb the glen to the notch', x: NOTCH.x, z: NOTCH.z, r: 160 },
           { type: 'pass', label: 'Fly up the valley to the waterfall', x: fallX, z: fallZ, r: 140 },
           { type: 'drop', label: 'Drop the lantern at the lookout', ...cabin(1480), r: 70, agl: 50, who: 'wren', item: 'lantern', say: 'A little light bobs along the ledge, then stops and waves. Wren has her lantern. Back down the valley to land.' },
           { type: 'land', strip: 'Pine Vale', who: 'hilde' },

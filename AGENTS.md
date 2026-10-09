@@ -21,9 +21,9 @@ what the game is and how to play it.
 | `src/world.js` | **The world**: the height function and grid `H`, `groundAt`/`slopeAt`, strips (`STRIPS`), landmark positions, terrain mesh (chunks + LOD), terrain colours, water plane, village and hamlet houses, strip dressing, trees, clouds, lights, shadows, `setTime`, obstacle grid |
 | `src/style.js` | The look: time-of-day presets (`TIMES`), shared `atmo` uniforms, fog/haze shader chunks, `paint()` (the toon-banded Lambert used by nearly everything), sky, clouds, cloud mist, water shaders, wind |
 | `src/landmarks.js` | Lighthouse (+ lamp beams), offshore light, sea fort, castle, sky ruin, railway viaduct + steam train |
-| `src/vale.js` | Pine Vale dressing: waterfall + stream, boulders, log cabins (+ smoke, lit windows), fireflies, spray |
-| `src/harbours.js` | Homes and boats at seaside mail stops: jetties, huts, tea house, moored rowboats |
-| `src/life.js` | Birds, sailboats, sheep, village and hamlet chimney smoke |
+| `src/vale.js` | Fells dressing: waterfall + stream, boulders (river, moor), log cabins everywhere on the island (+ smoke, lit windows), fireflies, spray |
+| `src/harbours.js` | Homes and boats at seaside mail stops: jetties, huts, tea house, moored rowboats, Sten's landing at the fjord head |
+| `src/life.js` | Birds, sailboats, sheep, deer herds on the Fells' meadows (`VALE_MEADOWS`; they bolt from a low plane), village and hamlet chimney smoke |
 | `src/grass.js` | GPU ground cover (grass tufts, flowers) in a tile that follows the camera, coloured from the terrain colour texture |
 | `src/smoke.js` | Shared particle ring (exhaust, crash plume, chimneys, train, spray); `AMBIENT_FAR2` gates ambient emitters |
 | `src/flight.js` | Flight model (`Flight`: state `ground`/`air`/`crashed`, `pos`, `vel`, `q`, `heading`, `throttle`, `flown`), per-plane handling (`AIRCRAFT.red/blue/bush/hopper`: thrust, drag, lift, stall, optional `VAPP`/`TAPP` for training approaches; `setAircraft` before `reset`), ground handling, collisions |
@@ -47,11 +47,13 @@ Frame order (`main.js` `frame()`): menu keys → `adventure.update` → wind, fl
   1 along the heading, −1 against it).
 - `along(st, x, z)` / `across(st, x, z)` (module-private in world.js) are a point's offsets in a strip's frame.
 - Pine Vale has its own frame: `valeUV(x, z) → [u, v]`, with u up the valley from the mouth (westward) and v to the
-  south; `valeXZ(u, v)` goes back. `valeRiver(u)` is the river's centreline.
+  south; `valeXZ(u, v)` goes back. `valeRiver(u)` is the river's centreline. The rest of the Fells is in world
+  coordinates: `FELL` (island ellipse + massif), `FJORD` (its head), `GLEN` (floor polyline) and `NOTCH`.
 
 ## World generation (src/world.js)
 
-- The grid covers x −2000…8000 and z −2000…2000 (`X0, Z0, SEGX = 1280, SEGZ = 512, CELL = 7.8125`).
+- The grid covers x −2000…9000 and z −4000…2000 (`X0, Z0, SEGX = 1408, SEGZ = 768, CELL = 7.8125`; keep `SEGX`,
+  `SEGZ` multiples of 64 for the chunks and `WX`, `WZ` multiples of 1000 for the tree chunks).
   `H[j·(SEGX+1)+i]` holds node heights. `groundAt` interpolates **exactly** like the rendered triangles, so collision,
   placement and the grass all agree with what's drawn.
 - `baseHeight(x, z) = max(homeIsland, volcanicIsland, atoll, seaStacks, pineVale)`, then strip flattening. Each
@@ -76,9 +78,12 @@ Frame order (`main.js` `frame()`): menu keys → `adventure.update` → wind, fl
 A rejected sample costs a number of `rand()` calls that depends on the terrain height there. So **new land inside
 an existing loop's sampling box, or any new `rand()` call, reshuffles every later tree and every cloud.** Rules:
 
-- New features get their own `rng(seed)`. Seeds in use: 5, 7, 11, 19, 23, 29, 31, 41, 53, 61, 71.
+- New features get their own `rng(seed)`. Seeds in use: 5, 7, 11, 13, 17, 19, 23, 29, 31, 41, 53, 61, 71.
 - Keep new land off existing islands' footprints. Where a sampling box overlaps new land, reject it right after
-  drawing x, z (the same `rand()` cost as the old "sea" rejection); the volcano tree loop does this for Pine Vale.
+  drawing x, z (the same `rand()` cost as the old "sea" rejection); the volcano tree loop does this for the Fells.
+  The 80 original clouds still sample the original map (x −2000…8000, z −2000…2000); the ground the grid gained
+  gets its own clouds from `rng(17)`. The other way round too: a loop with its own rng that samples a box over
+  another island plants on it (the Fells' spruce loop rejects the volcanic island's ellipse).
 - Check that it held: `tools/shot.sh -r HEAD out.png 'at=volcano&d=900'` should report ~0 changed pixels outside
   your new area. The grass uses `Math.random()`, so a few dozen pixels always differ.
 
@@ -156,9 +161,10 @@ Add a new low-light preset to all three.
 ## Verifying changes
 
 - `tools/shot.sh OUT.png 'QUERY'` renders a view headlessly (`tools/shot.html`: `cam=x,y,z,lx,ly,lz` or
-  `at=<strip name | village | lighthouse | castle | ruin | volcano | atoll | sealight | seafort | waterfall | vale>`
-  with `a=` bearing, `d=` distance, `y=` height; `t=` time of day; `lamp=1`; `w=`, `h=`; `frames=N`). It prints
-  `build`, `calls`, `tris`.
+  `at=<strip name | village | lighthouse | castle | ruin | volcano | atoll | sealight | seafort | waterfall | vale | fell |
+  fjord | notch | moor | fells | meadowN | cabinN>` with `a=` bearing, `d=` distance, `y=` height; `t=` time of day;
+  `lamp=1`; `w=`, `h=`; `frames=N`). It prints `build`, `calls`, `tris`. It runs one `life.update`, so the sheep and
+  deer are placed.
 - `tools/shot.sh -r REF OUT.png 'QUERY'` also renders `REF` (in a temporary git worktree) and counts the changed
   pixels. Use it for "nothing else changed" checks and before/after comparisons.
 - `tools/adventure.sh` plays the full story.

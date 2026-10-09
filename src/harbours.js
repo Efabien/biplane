@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { groundAt, slopeAt, addObstacle, STRIPS, ATOLL, SEA_LIGHT, SEAFORT, DOORS } from './world.js';
+import { groundAt, slopeAt, addObstacle, STRIPS, ATOLL, SEA_LIGHT, SEAFORT, FJORD, DOORS } from './world.js';
 import { paint, stripeTex } from './style.js';
 
 // Somewhere to live, or a boat to come by, at the mail stops by the sea: Elias rows down from his lighthouse to the
 // Beach strip, Juniper's tea house on the Headland, Nell's stilt hut and jetty on the atoll, Oskar's boat at the
-// offshore light, and the sea fort's supply launch. Moored boats ride the swell.
+// offshore light, the sea fort's supply launch, and Sten's landing at the head of the fjord. Moored boats ride the swell.
 const strip = (name) => STRIPS.find((s) => s.name === name);
 
 // Open rowing boat, bow toward local -z: plank hull walls around a wooden floor, a thwart, oars shipped inside
@@ -175,6 +175,19 @@ export function buildHarbours(scene) {
     const px = SEAFORT.x + dx * 25, pz = SEAFORT.z + dz * 25;
     const launch = moor(0xa33a2a, px + dz * 2.6, pz - dx * 2.6, a, 3.6);
     launch.scale.set(1.3, 1.2, 1.5);
+  }
+
+  // ---- Fjord head: Sten's landing, east of the strip's seaward end: a jetty off the shingle, his mail boat, a skiff drawn up ----
+  {
+    const st = strip('Fjord head'), jx = st.x + 70, z0 = FJORD.z + 60; // from the floor beside the strip, north to the water
+    const d = shore(jx, z0, 0, -1), jz = z0 - d, L = reach(jx, jz, 0, -1, 1.2);
+    sites.push({ name: 'fjord', x: jx, z: jz });
+    const { end } = jetty(scene, jx, jz + 3, 0, -1, L + 3);
+    moor(0x2f5a46, end[0] + 2.6, end[1] + 2.4, 0.08, 2.2).scale.set(1.25, 1.15, 1.4); // the mail boat, alongside
+    const b = rowboat(0xb5533c); // a skiff, keel up on the shingle
+    b.position.set(jx - 11, groundAt(jx - 11, jz + 7) + 0.72, jz + 7);
+    b.rotation.set(Math.PI, 0.4, 0);
+    scene.add(b);
   }
 
   sites.push({ name: 'sealight', x: SEA_LIGHT.x, z: SEA_LIGHT.z }, { name: 'seafort', x: SEAFORT.x, z: SEAFORT.z });

@@ -4,8 +4,9 @@ import { SUN_DIR, NCS, time, drift, wind, applyTime, cloudUniform, paint, stripe
 
 export const HALF = 2000, WATER = 0, RUNWAY_H = 15, RW_L = 600, RW_W = 30;
 // World grid: the home island (radius HALF, centred on the origin), a volcanic island to the east,
-// then a sea-stack crossing and a coral atoll in the far east, and the Pine Vale's forested island in the north-east
-export const X0 = -HALF, Z0 = -HALF, SEGX = 1280, SEGZ = 512, CELL = (HALF * 2) / SEGZ, WX = SEGX * CELL, WZ = SEGZ * CELL;
+// then a sea-stack crossing and a coral atoll in the far east, and the Fells, the Pine Vale's big forested island,
+// in the north-east (x −2000…9000, z −4000…2000; the grid grew north and east for it, so SEG* stay multiples of 64)
+export const X0 = -HALF, Z0 = -HALF - 2000, SEGX = 1408, SEGZ = 768, CELL = (HALF * 2) / 512, WX = SEGX * CELL, WZ = SEGZ * CELL;
 export const GRID = { x0: X0, z0: Z0, cell: CELL, segx: SEGX, segz: SEGZ };
 export const GLIDE = (3 * Math.PI) / 180; // standard 3° approach path
 
@@ -25,6 +26,8 @@ export const STRIPS = [
   { name: 'Atoll sandbar', x: 7423, z: 854, heading: 2.79, len: 320, w: 20, h: 2, aim: 60, surface: 'sand', blend: 60 },
   // on the Pine Vale's floor beside the river: land up the valley toward the waterfall (heading), take off out to sea
   { name: 'Pine Vale', x: 7290, z: -1145, heading: Math.PI / 2, len: 320, w: 20, h: 4.5, aim: 60, surface: 'grass', blend: 50, takeoff: -1 },
+  // on the flat head of the fjord, rising gently inland: land heading up the glen (heading), take off north down the fjord
+  { name: 'Fjord head', x: 6950, z: -2380, heading: Math.PI, len: 300, w: 20, h: 7, aim: 55, surface: 'grass', slope: 0.012, blend: 60, takeoff: -1 },
 ];
 for (const st of STRIPS) { st.fx = -Math.sin(st.heading); st.fz = -Math.cos(st.heading); st.slope ??= 0; st.blend ??= 160; st.takeoff ??= 1; }
 const along = (st, x, z) => (x - st.x) * st.fx + (z - st.z) * st.fz;
@@ -103,6 +106,25 @@ export function valeRiver(u) {
 }
 export const valeRiverWidth = (u) => 11 + 9 * (1 - smooth(0, 1000, u)); // half-width, wider toward the mouth
 export const VALE_POOL = { u: VALE.fall - 50, r: 28 }; // plunge pool at the cliff's toe
+// The Fells: the Pine Vale's island, as big as the home island. The valley is its south-east corner; north and west
+// of it a high moorland plateau (the valley's wall tops carry on) crowned by the High Fell massif (px, pz, foot pr),
+// a fjord cutting in from the north coast to a flat valley head, a glen climbing from the fjord head to a notch in the
+// valley's north wall, and lower wooded hills down to the west coast. The ellipse (rx, rz) is the island's outline.
+export const FELL = { x: 6850, z: -2050, rx: 1850, rz: 1680, px: 6050, pz: -2500, pr: 900 };
+export const FJORD = { x: 6950, z: -2600 }; // its head; the water runs north from here to the sea
+// The glen's floor: (x, z, height) from the valley's north wall up over the notch and down to the fjord head
+export const GLEN = [[6500, -1250, 12], [6520, -1800, 165], [6950, -2560, 8]];
+export const NOTCH = { x: GLEN[1][0], z: GLEN[1][1] };
+function glenAt(x, z) { // distance to the glen's centreline, and the floor height there (rounded over the notch)
+  let best = Infinity, hh = 0;
+  for (let i = 0; i + 1 < GLEN.length; i++) {
+    const [ax, az, ah] = GLEN[i], [bx, bz, bh] = GLEN[i + 1], dx = bx - ax, dz = bz - az;
+    const t = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+    const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
+    if (d < best) { best = d; hh = ah + (bh - ah) * smooth(0, 1, t); }
+  }
+  return [best, hh];
+}
 
 // Railway: straight line across a valley at a fixed deck height; tunnels at both ends (portals computed below)
 export const RAIL = { cx: -650, cz: 1175, dir: (40 * Math.PI) / 180, L: 350, deck: 80 };
@@ -173,14 +195,18 @@ function seaStacks(x, z) {
   }
   return h;
 }
-// Pine Vale: flat valley floor rising gently inland, walls up to ~350 m that fall steeply to the sea behind,
-// headlands at the mouth, a cliff up to the hanging valley and a lower head wall behind it (the sun sets over it).
-// The river is carved below sea level so the sea's water fills it; the stream above the falls has its own surface.
+// The Fells. The Pine Vale first, exactly as it was: flat valley floor rising gently inland, walls up to ~350 m,
+// headlands at the mouth, a cliff up to the hanging valley and a lower head wall behind it (the sun sets over it), the
+// south flank falling steeply to the sea. Then the island's body north and west of it (moor, massif, hills, falling to
+// the sea at the ellipse's rim), crossfaded in beyond the valley's wall tops; and the fjord and the glen carved last.
+// The river and the fjord are carved below sea level so the sea's water fills them; the stream above the falls has its own surface.
 function pineVale(x, z) {
-  const [u, v] = valeUV(x, z), V = VALE;
-  if (u < -250 || u > 2300 || Math.abs(v) > 880) return -35;
+  if (x < 4800 || x > 8900 || z < -3950 || z > -120) return -35;
+  const [u, v] = valeUV(x, z), V = VALE, F = FELL;
+  const de = Math.hypot((x - F.x) / F.rx, (z - F.z) / F.rz) + (fbm(x * 0.0016 + 5, z * 0.0016 + 9) - 0.5) * 0.22; // ragged outline
+  if (de > 1.02 && (u < -250 || u > 2300 || Math.abs(v) > 880)) return -35;
   const ue = u + 45 * Math.sin(v * 0.017 + 1) + 25 * Math.sin(v * 0.043); // a ragged shoreline at the mouth
-  let fl = ue < 0 ? Math.max(-35, 3.2 + ue * 0.3) : 3.2 + u * 0.004; // shelving off quickly, clear of the map's east edge
+  let fl = ue < 0 ? Math.max(-35, 3.2 + ue * 0.3) : 3.2 + u * 0.004; // shelving off quickly into the bay
   // the cliff up to the hanging valley: a ragged horseshoe, furthest forward where the stream goes over
   const uc = u - 0.004 * v * v - (noise(v * 0.035 + 3, 7) - 0.5) * 24 * smooth(15, 50, Math.abs(v));
   fl += (V.top + (u - V.fall) * 0.01 - fl) * smooth(V.fall - 14, V.fall, uc);
@@ -192,8 +218,33 @@ function pineVale(x, z) {
   const head = 110 * smooth(V.fall + 120, V.fall + 470, u) * (0.75 + 0.5 * fbm(x * 0.006 - 5, z * 0.006 + 44)); // saddle at the head
   let h = fl + Math.max(0, wall) + head;
   h = -35 + (h + 35) * (1 - smooth(540, 880, Math.abs(v))) * (1 - smooth(1980, 2260, u)); // steep outer flanks into the sea
-  // never reach into the volcanic island's footprint (its terrain, and the trees seeded from it, stay exactly as they were)
-  h = -35 + (h + 35) * smooth(1.05, 1.15, Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz));
+  // The island's body: the plateau at the wall tops' level, shelving to moorland toward the north and west coasts,
+  // the massif rising out of it (ridged and gullied on its flanks), then the rim falling steeply into the sea
+  const north = Math.max(smooth(-1300, -1750, z), smooth(5900, 5500, x)); // where the body is, around the valley
+  const dm = Math.hypot(x - F.px, z - F.pz);
+  const massif = 330 * (1 - smooth(0, F.pr, dm)) ** 1.6 + ((fbm(x * 0.006 + 3, z * 0.006 - 8) - 0.5) * 130 + (noise(x * 0.02 + 9, z * 0.02 + 4) - 0.5) * 30) * smooth(0, 250, dm) * (1 - smooth(F.pr, F.pr + 300, dm));
+  let body = peak * (1 - 0.62 * smooth(0.45, 0.9, de) * north) + massif + (noise(x * 0.03 + 17, z * 0.03) - 0.5) * 2;
+  body = -35 + (body + 35) * (1 - smooth(0.86, 1.0, de));
+  // beyond the valley's wall tops (a ragged line), and west of the head wall, the body takes over
+  const wgt = Math.max(smooth(300, 600, W + (noise(x * 0.003 + 21, z * 0.003) - 0.5) * 400) * north, smooth(V.fall + 450, V.fall + 750, u));
+  h += (body - h) * wgt;
+  { // the fjord: deep water between steep walls, winding and widening to the sea; its head a flat floor rising
+    // gently inland and climbing into the plateau at its far end, where the glen comes down
+    const s = -(z - FJORD.z), xc = FJORD.x + 110 * Math.sin(Math.max(s, 0) * 0.003) + 25 * Math.sin(s * 0.011);
+    const dl = Math.abs(x - xc) + (noise(x * 0.012 + 8, z * 0.012) - 0.5) * 60;
+    if (s > -720 && dl < 700) {
+      const floor = s > 0 ? -18 + 22.5 * (1 - smooth(0, 70, s)) : 4.5 - s * 0.012 + 320 * smooth(-350, -680, s);
+      const w = (s > 0 ? 150 + s * 0.09 : 215 * Math.sqrt(Math.max(0, 1 - (s / 600) ** 2))) + (noise(x * 0.006 + 1, z * 0.006 + 5) - 0.5) * 80; // the head rounded off
+      h = Math.min(h, floor + (h - floor) * smooth(0, 270, dl - w));
+    }
+  }
+  { // the glen: a hanging side valley from the notch in the valley's north wall down to the fjord head
+    const [gd, gh] = glenAt(x, z);
+    if (gd < 400) h = Math.min(h, gh + (h - gh) * smooth(0, 260, gd - 80 - (noise(x * 0.01 + 3, z * 0.01) - 0.5) * 40));
+  }
+  // never reach into the volcanic island's footprint (its terrain, and the trees seeded from it, stay exactly as they
+  // were: the trees' loop rejects everything outside 1.02 of it up here); a ragged edge to the strait between them
+  h = -35 + (h + 35) * smooth(1.05, 1.15, Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) + (noise(x * 0.003 + 2, z * 0.003 + 6) - 0.5) * 0.06);
   if (u < V.fall) { // river + plunge pool (the river channel stops inside the pool, clear of the cliff)
     const P = VALE_POOL, d = Math.min(u < P.u ? Math.abs(v - valeRiver(u)) - valeRiverWidth(u) : Infinity, Math.hypot(u - P.u, v) - P.r);
     h = Math.min(h, -14 + (h + 14) * smooth(-6, 12, d)); // deep enough to read as dark river water, not a shallow
@@ -254,9 +305,10 @@ export function slopeAt(x, z) {
   return Math.hypot(groundAt(x + 4, z) - groundAt(x - 4, z), groundAt(x, z + 4) - groundAt(x, z - 4)) / 8;
 }
 
-// Pine Vale log cabins: rough sites on the valley floor (u up the valley, v offset from the river's centreline),
-// each nudged to the nearest flat, dry spot, clear of the strip's approach corridor, and turned to face the water.
-// The forest leaves a clearing around each (the spruce loop), vale.js builds them.
+// Log cabins on the Fells: rough sites on the Pine Vale's floor (u up the valley, v offset from the river's centreline,
+// `vale: true`), then at the fjord head, on the moor, in the glen and on the west hills (x, z, and what they face),
+// each nudged to the nearest flat, dry spot, clear of the strips' approach corridors, and turned to face the water
+// (or the view). The forest leaves a clearing around each (the spruce loop), vale.js builds them.
 export const VALE_CABINS = [];
 // Where a villager can step out of a building: the spot just in front of each door (village and hamlet houses here,
 // huts in harbours.js, cabins in vale.js). The adventure's delivery scenes start the walk-up from the nearest one.
@@ -264,7 +316,20 @@ export const DOORS = [];
 {
   const cr = rng(61);
   const inCorridor = (x, z) => STRIPS.some((st) => Math.abs(across(st, x, z)) < 80 && Math.abs(along(st, x, z)) < st.len / 2 + 790);
-  for (const [u0, dv] of [[150, 50], [330, 70], [760, 95], [880, 125], [1170, 42], [1235, 70], [1480, 45]]) {
+  const site = (x0, z0, R, face, vale) => {
+    let best = null;
+    for (let t = 0; t < 80; t++) {
+      const r = t && 6 + cr() * R, a = cr() * Math.PI * 2, x = x0 + Math.cos(a) * r, z = z0 + Math.sin(a) * r;
+      const h = groundAt(x, z), sl = slopeAt(x, z);
+      if (h < 4 || sl > 0.18 || inCorridor(x, z) || VALE_CABINS.some((c) => Math.hypot(c.x - x, c.z - z) < 40)) continue;
+      if (!best || sl < best.sl) best = { x, z, sl };
+    }
+    if (!best) return;
+    const [fx, fz] = face(best.x, best.z);
+    VALE_CABINS.push({ x: best.x, z: best.z, rot: Math.atan2(fx - best.x, fz - best.z) + (cr() - 0.5) * 0.5, w: 4.5 + cr() * 1.8, d: 5.5 + cr() * 2, hgt: 2.6 + cr() * 0.5, r: cr(), vale });
+  };
+  const river = (x, z) => { const [u] = valeUV(x, z); return valeXZ(u, u > VALE.fall ? 0 : valeRiver(u)); };
+  for (const [u0, dv] of [[150, 50], [330, 70], [760, 95], [880, 125], [1170, 42], [1235, 70], [1480, 45]]) { // sampled as before the island grew: these stay put
     let best = null;
     for (let t = 0; t < 80; t++) {
       const r = t && 6 + cr() * 30, a = cr() * Math.PI * 2, u = u0 + Math.cos(a) * r;
@@ -274,10 +339,22 @@ export const DOORS = [];
       if (!best || sl < best.sl) best = { x, z, sl };
     }
     if (!best) continue;
-    const [u] = valeUV(best.x, best.z), [rx, rz] = valeXZ(u, u > VALE.fall ? 0 : valeRiver(u));
-    VALE_CABINS.push({ x: best.x, z: best.z, rot: Math.atan2(rx - best.x, rz - best.z) + (cr() - 0.5) * 0.5, w: 4.5 + cr() * 1.8, d: 5.5 + cr() * 2, hgt: 2.6 + cr() * 0.5, r: cr() });
+    const [rx, rz] = river(best.x, best.z);
+    VALE_CABINS.push({ x: best.x, z: best.z, rot: Math.atan2(rx - best.x, rz - best.z) + (cr() - 0.5) * 0.5, w: 4.5 + cr() * 1.8, d: 5.5 + cr() * 2, hgt: 2.6 + cr() * 0.5, r: cr(), vale: true });
   }
+  const toward = (tx, tz) => () => [tx, tz];
+  // Sten's landing at the fjord head: three cabins either side of the strip, facing the water
+  for (const [x, z] of [[6830, -2500], [7090, -2470], [7110, -2560]]) site(x, z, 40, toward(FJORD.x, FJORD.z - 80), false);
+  // the moor: a shepherd's cabin and a trapper's, each looking out over the island; one in the glen; two on the west hills
+  site(7420, -1980, 80, toward(FJORD.x, FJORD.z), false);
+  site(8050, -2300, 80, toward(9000, -2300), false);
+  site(6700, -2250, 60, toward(NOTCH.x, NOTCH.z), false);
+  site(5300, -1800, 80, toward(4500, -1800), false);
+  site(5550, -2450, 80, toward(FELL.px, FELL.pz), false);
 }
+
+// Where the Fells' deer graze (filled by buildWorld once the trees are placed)
+export const VALE_MEADOWS = [];
 
 // ---- obstacle grid (trees, houses, buildings) ----------------------------
 const GCELL = 50, GNX = WX / GCELL, GNZ = WZ / GCELL;
@@ -378,19 +455,23 @@ export function buildWorld(scene) {
   const sand = new THREE.Color(0xe2cf9e), grassA = new THREE.Color(0xa8d060), grassB = new THREE.Color(0x5c9a46);
   const rock = new THREE.Color(0x8e8878), snow = new THREE.Color(0xf4f6f8), fern = new THREE.Color(0x7cc653), jungle = new THREE.Color(0x3a8a3c);
   const tmp = new THREE.Color(), shingle = new THREE.Color(0x6f7468), slate = new THREE.Color(0x565c64), mossA = new THREE.Color(0x4f7d58), mossB = new THREE.Color(0x284f46);
+  const heather = new THREE.Color(0x6a4d5e);
   for (let j = 0, v = 0; j <= SEGZ; j++)
     for (let i = 0; i <= SEGX; i++, v++) {
       const x = X0 + i * CELL, z = Z0 + j * CELL, h = H[v];
       positions[v * 3] = x; positions[v * 3 + 1] = h; positions[v * 3 + 2] = z;
       const s = Math.hypot(H[v + (i < SEGX ? 1 : 0)] - H[v - (i > 0 ? 1 : 0)], H[v + (j < SEGZ ? RS : 0)] - H[v - (j > 0 ? RS : 0)]) / (2 * CELL);
       const n = fbm(x * 0.01, z * 0.01), tropic = x > HALF && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) < 1.05;
-      const [vu, vv] = valeUV(x, z), vale = !tropic && x > 5350 && vu > -250 && vu < 2300 && Math.abs(vv) < 880;
+      const vale = !tropic && x > 4800 && z < -120; // the Fells (the volcanic island's north-east is masked out of it)
       // Materials blend over short ranges with a fine (~20 m) noise on the thresholds, so rock, snow and beach
       // edges come out ragged instead of following the grid in hard bands
       const nz = noise(x * 0.045 + 13, z * 0.045 - 7) - 0.5, beach = 1 - smooth(2.4, 3.4, h + nz * 0.8);
-      if (vale) { // Pine Vale: grey shingle banks, moss-dark meadows and slopes, slate crags and summits
+      if (vale) { // the Fells: grey shingle banks, moss-dark meadows and slopes, heather on the open moor, slate crags, snow on the High Fell
         col.copy(mossA).lerp(mossB, smooth(0.3, 0.7, n + h / 400));
+        const moor = smooth(120, 200, h) * (1 - smooth(300, 360, h)) * (1 - smooth(0.5, 0.9, s)) * smooth(-1500, -1800, z); // the plateau, not the valley walls
+        col.lerp(heather, 0.4 * moor * smooth(0.45, 0.62, fbm(x * 0.006 + 61, z * 0.006 - 23) + nz * 0.15));
         col.lerp(tmp.copy(slate).lerp(mossB, 0.25), Math.max(smooth(1.3, 1.6, s + nz * 0.3), smooth(-20, 20, h - 320 - n * 40 + nz * 30)));
+        col.lerp(snow, smooth(-14, 14, h - 445 - n * 50 + nz * 25));
         col.lerp(shingle, beach);
       } else if (tropic) { // lush volcanic island, rock only on cliffs
         col.copy(fern).lerp(jungle, smooth(0.3, 0.7, n + h / 500));
@@ -771,8 +852,8 @@ export function buildWorld(scene) {
   const nHome = nT;
   for (let t = 0; t < 60000 && nT - nHome < 4000; t++) {
     const x = ISLE.x + (rand() * 2 - 1) * ISLE.rx, z = ISLE.z + (rand() * 2 - 1) * ISLE.rz;
-    // the Pine Vale's land, open sea before it existed: rejected at the same cost in rand() as the sea was (keeps the sequence)
-    if (x > 5350 && z < -150 && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) > 1.02) continue;
+    // the Fells' land, open sea before it existed: rejected at the same cost in rand() as the sea was (keeps the sequence)
+    if (z < -150 && Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) > 1.02) continue;
     const h = groundAt(x, z);
     if (h < 3 || h > 330) continue;
     if (fbm(x * 0.004 - 30, z * 0.004 + 12) < 0.44 && rand() > 0.05) continue;
@@ -792,14 +873,17 @@ export function buildWorld(scene) {
     n++;
   }
   for (const s of STACKS) if (s.h < 48 && ar() < 0.6) addTree(s.x, s.z, 0.6 + ar() * 0.3, false);
-  // Pine Vale: tall narrow spruces crowding both walls down to the river banks, thinning on the crags and summits
+  // The Fells: tall narrow spruces crowding the Pine Vale's walls down to the river banks and the fjord's and glen's
+  // sides, thinning on the crags and summits; the moor above is open heath with woods in its hollows
   // (own rng: the rest of the world stays put)
   const vr = rng(29), clearOfStrips = (x, z) => !STRIPS.some((st) => Math.abs(across(st, x, z)) < 70 && Math.abs(along(st, x, z)) < st.len / 2 + 780); // + the full 700 m approaches
-  for (let t = 0, n = 0; t < 140000 && n < 9000; t++) {
-    const [x, z] = valeXZ(-380 + vr() * 2620, (vr() * 2 - 1) * (vr() < 0.7 ? 560 : 860)); // thickest facing the valley
+  for (let t = 0, n = 0; t < 400000 && n < 15000; t++) {
+    const x = 4800 + vr() * 4100, z = -3950 + vr() * 3830;
+    if (Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) < 1.05) continue; // the volcanic island's north-east flank keeps its own woods
     const h = groundAt(x, z), sl = slopeAt(x, z);
     if (h < 3.2 || h > 380 || sl > 1.45) continue;
-    if (fbm(x * 0.005 + 7, z * 0.005 - 3) < 0.34 + h / 1200 && vr() > 0.12) continue; // clearings, wider up high
+    const moor = smooth(120, 200, h) * (1 - smooth(300, 360, h)) * (1 - smooth(0.5, 0.9, sl)) * smooth(-1500, -1800, z); // as the heather in the colour loop
+    if (fbm(x * 0.005 + 7, z * 0.005 - 3) < 0.34 + h / 1200 + 0.2 * moor && vr() > 0.12 - 0.09 * moor) continue; // clearings, wider up high and on the moor
     if ((h > 320 || sl > 1.15) && vr() < 0.5) continue;
     if (!clearOfStrips(x, z) || VALE_CABINS.some((c) => (c.x - x) ** 2 + (c.z - z) ** 2 < 16 * 16)) continue;
     const H = (11 + vr() * 12) * (h > 250 ? 0.7 : 1);
@@ -808,6 +892,25 @@ export function buildWorld(scene) {
     record('spruces', x, z, h - 0.3, H * (0.4 + vr() * 0.14), H, H * (0.4 + vr() * 0.14), vr() * 6, col);
     addObstacle(x, z, H * 0.14, h + H);
     n++;
+  }
+  // Deer meadows on the Fells: open, nearly level ground with no tree or building within 30 m, spread over the island
+  // (life.js grazes a herd on each; own rng)
+  {
+    const mr = rng(13), open = (x, z, r) => {
+      const ci = Math.floor((x - X0) / GCELL), cj = Math.floor((z - Z0) / GCELL), n = Math.ceil(r / GCELL);
+      for (let j = Math.max(0, cj - n); j <= Math.min(GNZ - 1, cj + n); j++)
+        for (let i = Math.max(0, ci - n); i <= Math.min(GNX - 1, ci + n); i++)
+          for (const o of grid[j * GNX + i]) if ((o.x - x) ** 2 + (o.z - z) ** 2 < (r + o.r) ** 2) return false;
+      return true;
+    };
+    for (let t = 0; t < 6000 && VALE_MEADOWS.length < 12; t++) {
+      const x = 4800 + mr() * 4100, z = -3950 + mr() * 3830, h = groundAt(x, z);
+      if (h < 5 || h > 380 || slopeAt(x, z) > 0.2 || Math.hypot((x - ISLE.x) / ISLE.rx, (z - ISLE.z) / ISLE.rz) < 1.15) continue;
+      if (STRIPS.some((st) => Math.abs(across(st, x, z)) < 60 && Math.abs(along(st, x, z)) < st.len / 2 + 60)) continue;
+      if (VALE_MEADOWS.some((m) => (m.x - x) ** 2 + (m.z - z) ** 2 < 450 * 450) || VALE_CABINS.some((c) => (c.x - x) ** 2 + (c.z - z) ** 2 < 60 * 60)) continue;
+      if (!open(x, z, 30)) continue;
+      VALE_MEADOWS.push({ x, z });
+    }
   }
   for (let v = 0; v < NV; v++) if (shade[v] > 0) { const k = 1 - 0.3 * Math.min(1, shade[v]); colors[v * 3] *= k; colors[v * 3 + 1] *= k; colors[v * 3 + 2] *= k; }
   for (const { cc, ci, cj } of chunkColors) fillChunk(cc, ci, cj);
@@ -823,21 +926,23 @@ export function buildWorld(scene) {
       scene.add(mesh);
     }
 
-  // Clouds: towering cumulus of many smaller puffs; flat bottoms, bumps and drift happen in the shader
-  const NC = 80, PPC = 24, WRAP = { x0: X0 - 400, span: WX + 800 }; // clouds drift east and wrap across the whole map
+  // Clouds: towering cumulus of many smaller puffs; flat bottoms, bumps and drift happen in the shader.
+  // 80 over the original map (x −2000…8000, z −2000…2000, from the shared rand: they keep their places), then
+  // 24 more over the ground the grid gained for the Fells, from their own rng.
+  const NC = 104, PPC = 24, WRAP = { x0: X0 - 400, span: WX + 800 }; // clouds drift east and wrap across the whole map
   const puffGeo = new THREE.SphereGeometry(1, 20, 14);
   const span = new Float32Array(NC * PPC * 4);
   const puffs = new THREE.InstancedMesh(puffGeo, cloudMaterial(WRAP), NC * PPC);
   const clouds = [], mist = [];
   let pi = 0;
-  for (let c = 0; c < NC; c++) {
-    const W = 25 + rand() ** 1.5 * 70, B = 240 + rand() * 140, tall = W * (0.8 + rand() * 1.0);
-    const cx = X0 + rand() * WX, cz = Z0 + rand() * WZ;
+  const cloud = (r, at) => {
+    const W = 25 + r() ** 1.5 * 70, B = 240 + r() * 140, tall = W * (0.8 + r() * 1.0);
+    const [cx, cz] = at(r);
     const parts = [];
     const ring = (n, dist, y, s0, s1) => {
       for (let p = 0; p < n; p++) {
-        const a = (p / n) * Math.PI * 2 + rand() * 0.8, d = dist * (0.7 + rand() * 0.5);
-        parts.push({ ox: Math.cos(a) * d * W, oy: y * (0.8 + rand() * 0.4), oz: Math.sin(a) * d * W * 0.7, s: W * (s0 + rand() * (s1 - s0)) });
+        const a = (p / n) * Math.PI * 2 + r() * 0.8, d = dist * (0.7 + r() * 0.5);
+        parts.push({ ox: Math.cos(a) * d * W, oy: y * (0.8 + r() * 0.4), oz: Math.sin(a) * d * W * 0.7, s: W * (s0 + r() * (s1 - s0)) });
       }
     };
     ring(8, 0.62, W * 0.08, 0.28, 0.4);     // wide base
@@ -849,16 +954,21 @@ export function buildWorld(scene) {
       place(puffs, pi, cx + p.ox, B + p.oy, cz + p.oz, p.s * 0.85, p.s * 0.68, p.s * 0.85); // solid core, softened by the mist
       span.set([B, top, cx, 0], pi++ * 4);
       for (let k = 0; k < 2; k++) { // two mist sprites on the puff's surface
-        const a = rand() * Math.PI * 2, e = rand() * 1.2 - 0.3;
-        mist.push([cx + p.ox + Math.cos(a) * Math.cos(e) * p.s * 0.7, Math.max(B + p.s * 0.2, B + p.oy + Math.sin(e) * p.s * 0.6), cz + p.oz + Math.sin(a) * Math.cos(e) * p.s * 0.7, B, top, cx, p.s * (1.4 + rand() * 0.6)]);
+        const a = r() * Math.PI * 2, e = r() * 1.2 - 0.3;
+        mist.push([cx + p.ox + Math.cos(a) * Math.cos(e) * p.s * 0.7, Math.max(B + p.s * 0.2, B + p.oy + Math.sin(e) * p.s * 0.6), cz + p.oz + Math.sin(a) * Math.cos(e) * p.s * 0.7, B, top, cx, p.s * (1.4 + r() * 0.6)]);
       }
     }
     for (let k = 0; k < 6; k++) { // wispy base
-      const a = (k / 6) * Math.PI * 2 + rand();
-      mist.push([cx + Math.cos(a) * W * 0.6, B + W * 0.12, cz + Math.sin(a) * W * 0.45, B, top, cx, W * (0.6 + rand() * 0.3)]);
+      const a = (k / 6) * Math.PI * 2 + r();
+      mist.push([cx + Math.cos(a) * W * 0.6, B + W * 0.12, cz + Math.sin(a) * W * 0.45, B, top, cx, W * (0.6 + r() * 0.3)]);
     }
     clouds.push({ x: cx, z: cz, W, B, y: (B + top) / 2, cx });
-  }
+  };
+  for (let c = 0; c < 80; c++) cloud(rand, (r) => [-HALF + r() * 10000, -HALF + r() * 4000]);
+  const kr = rng(17);
+  for (let c = 0; c < NC - 80; c++) cloud(kr, (r) => { // the new band north of z −2000, and the strip east of x 8000
+    for (;;) { const x = 3000 + r() * 6000, z = Z0 + r() * 6000; if (z < -HALF || x > 8000) return [x, z]; }
+  });
   const spanAttr = new THREE.InstancedBufferAttribute(span.slice(), 4).setUsage(THREE.DynamicDrawUsage);
   puffGeo.setAttribute('aSpan', spanAttr);
   puffs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

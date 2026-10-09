@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { groundAt, addObstacle, stripAt, VALE, VALE_POOL, VALE_CABINS, DOORS, valeXZ, valeRiver, valeRiverWidth } from './world.js';
+import { groundAt, addObstacle, stripAt, VALE, VALE_POOL, VALE_CABINS, DOORS, valeUV, valeXZ, valeRiver, valeRiverWidth } from './world.js';
 import { paint, time, atmo, pointScale } from './style.js';
 import { AMBIENT_FAR2 } from './smoke.js';
 
-// Pine Vale dressing: the waterfall off the hanging valley and the stream feeding it, boulders in and along
-// the river, spray rising from the plunge pool, log cabins with smoking chimneys, and fireflies over the water in the low light.
+// Pine Vale dressing: the waterfall off the hanging valley and the stream feeding it, boulders in and along the river
+// and strewn over the moor above, spray rising from the plunge pool, log cabins with smoking chimneys (the valley's,
+// and the ones at the fjord head, on the moor and in the hills), and fireflies over the water in the low light.
 function rng(seed) {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -142,6 +143,11 @@ export function buildVale(scene, smoke) {
   for (let n = 0; n < 150; n++) { const u = vr() * VALE_POOL.u, side = vr() < 0.5 ? -1 : 1; addRock(u, valeRiver(u) + side * (valeRiverWidth(u) + 2 + vr() ** 2 * 30), 0.8 + vr() * 3, 0.35); }
   for (let n = 0; n < 24; n++) { const a = vr() * Math.PI * 2, d = VALE_POOL.r * (0.9 + vr() * 0.5); addRock(VALE_POOL.u + Math.cos(a) * d, Math.sin(a) * d, 2 + vr() * 3.5, 0.35); }
   for (let n = 0; n < 90; n++) addRock(-100 + vr() * 1400, (vr() * 2 - 1) * 380, 1 + vr() * 4, 0.4);
+  for (let n = 0; n < 160; n++) { // erratics on the moor, scree in the glen and at the fjord head (the island north of the valley)
+    const x = 5200 + vr() * 3300, z = -3650 + vr() * 1950, h = groundAt(x, z);
+    if (h < 4 || h > 420) continue;
+    addRock(...valeUV(x, z), 1 + vr() * 4.5, 0.4);
+  }
   const geos = [boulderGeometry(3), boulderGeometry(8)], rockMat = paint(0xffffff);
   const dummy = new THREE.Object3D(), col = new THREE.Color();
   geos.forEach((geo, k) => {

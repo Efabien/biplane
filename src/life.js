@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { groundAt, slopeAt, stripAt, WATER, VILLAGE, LIGHTHOUSE, RUIN, SEAFORT } from './world.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { groundAt, slopeAt, stripAt, WATER, VILLAGE, LIGHTHOUSE, RUIN, SEAFORT, VALE_MEADOWS } from './world.js';
 import { paint, time, atmo } from './style.js';
 import { AMBIENT_FAR2 } from './smoke.js';
 
-// Calm life: circling bird flocks, sailboats, grazing sheep, chimney smoke.
+// Calm life: circling bird flocks, sailboats, grazing sheep, deer on the Fells, chimney smoke.
 export function createLife(scene, world, smoke) {
   const dummy = new THREE.Object3D();
 
@@ -81,6 +82,50 @@ export function createLife(scene, world, smoke) {
   const heads = new THREE.InstancedMesh(headGeo, paint(0x3a3230), sheep.length);
   for (const o of [bodies, heads]) { o.castShadow = true; o.frustumCulled = false; scene.add(o); }
 
+  // ---- Deer: small herds grazing the Fells' meadows (world.js picks them). They wander and graze like the sheep,
+  // and bolt away from the plane when it comes low over them, bounding with their legs swinging ----
+  const deerBody = new THREE.IcosahedronGeometry(0.5, 1).scale(0.9, 0.8, 1.6).translate(0, 1.1, 0);
+  const deerHead = mergeGeometries([ // pivoted at the base of the neck (so it can dip to graze): neck, head, muzzle, ears
+    new THREE.BoxGeometry(0.2, 0.62, 0.24).translate(0, 0.28, 0).rotateX(-0.45),
+    new THREE.BoxGeometry(0.2, 0.22, 0.3).translate(0, 0.6, 0.3),
+    new THREE.BoxGeometry(0.13, 0.13, 0.22).translate(0, 0.55, 0.52),
+    new THREE.BoxGeometry(0.06, 0.16, 0.03).translate(-0.12, 0.76, 0.22).rotateZ(0.4),
+    new THREE.BoxGeometry(0.06, 0.16, 0.03).translate(0.12, 0.76, 0.22).rotateZ(-0.4),
+  ]);
+  const antlers = mergeGeometries([-1, 1].flatMap((s) => [ // a buck's: beam curving out and back, two tines
+    new THREE.BoxGeometry(0.04, 0.5, 0.04).translate(0, 0.25, 0).rotateZ(-s * 0.45).rotateX(0.35).translate(s * 0.07, 0.72, 0.2),
+    new THREE.BoxGeometry(0.03, 0.24, 0.03).translate(0, 0.12, 0).rotateZ(-s * 1.1).translate(s * 0.17, 0.96, 0.14),
+    new THREE.BoxGeometry(0.03, 0.2, 0.03).translate(0, 0.1, 0).rotateX(-0.9).translate(s * 0.25, 1.1, 0.1),
+  ]));
+  const deerLeg = new THREE.BoxGeometry(0.1, 0.95, 0.12).translate(0, -0.47, 0); // hangs from the hip
+  const deer = [];
+  for (const m of VALE_MEADOWS) {
+    const n = 4 + Math.floor(Math.random() * 4);
+    for (let k = 0, tries = 0; k < n && tries < 60; tries++) {
+      const x = m.x + (Math.random() - 0.5) * 44, z = m.z + (Math.random() - 0.5) * 44;
+      if (groundAt(x, z) < 4 || slopeAt(x, z) > 0.3) continue;
+      deer.push({ x, z, hx: m.x, hz: m.z, yaw: Math.random() * 6.28, walk: 0, timer: Math.random() * 5, flee: 0, buck: k % 3 === 0, ph: Math.random() * 6, run: 0 });
+      k++;
+    }
+  }
+  const nBucks = deer.filter((d) => d.buck).length;
+  const deerBodies = new THREE.InstancedMesh(deerBody, paint(0xffffff), deer.length);
+  const deerHeads = new THREE.InstancedMesh(deerHead, paint(0xffffff), deer.length);
+  const deerLegs = new THREE.InstancedMesh(deerLeg, paint(0x5a4432), deer.length * 4);
+  const deerAntlers = new THREE.InstancedMesh(antlers, paint(0xd9cdb4), nBucks);
+  const hide = new THREE.Color();
+  deer.forEach((d, i) => {
+    hide.setHSL(0.07 + Math.random() * 0.02, 0.35 + Math.random() * 0.1, 0.3 + Math.random() * 0.1, THREE.SRGBColorSpace);
+    deerBodies.setColorAt(i, hide);
+    deerHeads.setColorAt(i, hide);
+  });
+  for (const o of [deerBodies, deerHeads, deerLegs, deerAntlers]) { o.castShadow = true; o.frustumCulled = false; scene.add(o); }
+  const _body = new THREE.Matrix4(), _loc = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _one = new THREE.Vector3(1, 1, 1);
+  const part = (mesh, idx, x, y, z, rx) => { // a part's matrix: the body's, then a local offset and a pitch
+    _loc.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, 0, 0)), _one);
+    mesh.setMatrixAt(idx, _loc.premultiply(_body));
+  };
+
   // ---- Chimney smoke ----
   const chimneys = world.chimneys.map((c) => ({ ...c, acc: Math.random() }));
 
@@ -124,6 +169,46 @@ export function createLife(scene, world, smoke) {
         heads.setMatrixAt(i, dummy.matrix);
       });
       bodies.instanceMatrix.needsUpdate = heads.instanceMatrix.needsUpdate = true;
+
+      let buck = 0;
+      deer.forEach((d, i) => {
+        const g = groundAt(d.x, d.z), dx = d.x - cam.x, dz = d.z - cam.z, agl = cam.y - g;
+        if (dx * dx + dz * dz < 170 * 170 && agl > -5 && agl < 90) { // the plane low overhead: bolt, away from it
+          if (d.flee <= 0) d.yaw = Math.atan2(dx, dz) + (Math.random() - 0.5) * 0.8;
+          d.flee = 4 + Math.random() * 2;
+        }
+        let speed;
+        if (d.flee > 0) {
+          d.flee -= dt;
+          speed = 7.5;
+          if (Math.hypot(d.x - d.hx, d.z - d.hz) > 160) d.yaw += (Math.atan2(d.hx - d.x, d.hz - d.z) - d.yaw) * 0.02; // bend back toward the meadow
+        } else {
+          d.timer -= dt;
+          if (d.timer <= 0) { d.walk = d.walk ? 0 : 0.5; d.timer = d.walk ? 2 + Math.random() * 3 : 4 + Math.random() * 9; d.yaw += (Math.random() - 0.5) * 2; }
+          if (Math.hypot(d.x - d.hx, d.z - d.hz) > 40) d.yaw = Math.atan2(d.hx - d.x, d.hz - d.z); // stay with the herd
+          speed = d.walk;
+        }
+        if (speed) {
+          const nx = d.x + Math.sin(d.yaw) * speed * dt, nz = d.z + Math.cos(d.yaw) * speed * dt;
+          if (slopeAt(nx, nz) > 0.5 || groundAt(nx, nz) < 3 || world.hitObstacle(nx, g + 1, nz)) d.yaw += 1.2; // a tree, a cliff, the water: swerve
+          else { d.x = nx; d.z = nz; }
+          d.run += dt * (d.flee > 0 ? 11 : 5);
+        }
+        const bound = d.flee > 0 ? Math.abs(Math.sin(d.run * 0.5)) * 0.3 : 0, swing = Math.sin(d.run) * (d.flee > 0 ? 0.8 : speed ? 0.45 : 0);
+        dummy.position.set(d.x, groundAt(d.x, d.z) + bound, d.z);
+        dummy.rotation.set(d.flee > 0 ? -0.08 : 0, d.yaw, 0);
+        dummy.scale.setScalar(d.buck ? 1.1 : 1);
+        dummy.updateMatrix();
+        _body.copy(dummy.matrix);
+        deerBodies.setMatrixAt(i, _body);
+        part(deerHeads, i, 0, 1.3, 0.55, d.flee > 0 || speed ? 0 : 0.85 + Math.sin(t * 1.6 + i) * 0.1); // head down to graze
+        if (d.buck) part(deerAntlers, buck++, 0, 1.3, 0.55, d.flee > 0 || speed ? 0 : 0.85 + Math.sin(t * 1.6 + i) * 0.1);
+        part(deerLegs, i * 4, -0.2, 1.05, 0.45, swing);
+        part(deerLegs, i * 4 + 1, 0.2, 1.05, 0.45, -swing);
+        part(deerLegs, i * 4 + 2, -0.2, 1.05, -0.45, -swing);
+        part(deerLegs, i * 4 + 3, 0.2, 1.05, -0.45, swing);
+      });
+      deerBodies.instanceMatrix.needsUpdate = deerHeads.instanceMatrix.needsUpdate = deerLegs.instanceMatrix.needsUpdate = deerAntlers.instanceMatrix.needsUpdate = true;
 
       for (const c of chimneys) {
         if ((c.x - cam.x) ** 2 + (c.z - cam.z) ** 2 > AMBIENT_FAR2) continue; // acc stays < 1: no burst on return
