@@ -175,6 +175,7 @@ adventure = createAdventure({
   fly: (start) => takeOff('red', start),
   setTime: (name) => { timeNow = name ?? settings.time; world.setTime(timeNow); updateLamp(); },
   onFlags: applyFlags,
+  plane: () => plane, // the pilot's arm reaches out in the delivery scenes
 });
 applyFlags(adventure.flags);
 menu.querySelectorAll('.plane[data-plane]').forEach((b) => b.addEventListener('click', () => choose(b.dataset.plane)));

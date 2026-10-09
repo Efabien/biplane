@@ -258,6 +258,9 @@ export function slopeAt(x, z) {
 // each nudged to the nearest flat, dry spot, clear of the strip's approach corridor, and turned to face the water.
 // The forest leaves a clearing around each (the spruce loop), vale.js builds them.
 export const VALE_CABINS = [];
+// Where a villager can step out of a building: the spot just in front of each door (village and hamlet houses here,
+// huts in harbours.js, cabins in vale.js). The adventure's delivery scenes start the walk-up from the nearest one.
+export const DOORS = [];
 {
   const cr = rng(61);
   const inCorridor = (x, z) => STRIPS.some((st) => Math.abs(across(st, x, z)) < 80 && Math.abs(along(st, x, z)) < st.len / 2 + 790);
@@ -672,6 +675,7 @@ export function buildWorld(scene) {
     const gy = y + 1, c = Math.cos(h.rot), sn = Math.sin(h.rot);
     const fz = dr() < 0.5 ? 1 : -1, dx = (dr() - 0.5) * h.w * 0.35, dz = fz * (h.d / 2 + 0.07);
     place(doorMesh, i, h.x + dx * c + dz * sn, gy, h.z - dx * sn + dz * c, 1, 1, 1, h.rot);
+    DOORS.push({ x: h.x + dx * c + (dz + fz * 0.8) * sn, z: h.z - dx * sn + (dz + fz * 0.8) * c });
     doorMesh.setColorAt(i, col.setHex(doorColors[Math.floor(dr() * doorColors.length)]));
     addWindow(h, gy, -Math.sign(dx || 1) * h.w * 0.27, 1.6, fz * (h.d / 2 + 0.06), 0);
     addWindow(h, gy, (dr() - 0.5) * h.w * 0.5, 1.6, -fz * (h.d / 2 + 0.06), 0);
