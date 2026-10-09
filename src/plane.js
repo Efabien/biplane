@@ -214,9 +214,16 @@ export function createPlane(livery = LIVERIES.red) {
   for (const x of [-0.08, 0.08]) add(lens, metal, x, 0.1, -0.2, pilot);
   const scarf = pivot(0.05, -0.15, 0.12, pilot);
   add(new THREE.BoxGeometry(0.1, 0.02, 0.7).translate(0, 0, 0.35), paint(0xf4f1ea), 0, 0, 0, scarf);
+  // Arms (port, starboard), hanging inside the fuselage until a delivery scene raises one over the rim
+  const arms = [-1, 1].map((s) => {
+    const a = pivot(s * 0.3, -0.32, 0, pilot);
+    add(new THREE.BoxGeometry(0.11, 0.55, 0.13), leather, 0, -0.26, 0, a);
+    add(new THREE.SphereGeometry(0.065, 8, 6), skin, 0, -0.56, 0, a);
+    return a;
+  });
 
   const eye = air.eye ?? V(0, 1.0, 0.55), exhausts = air.exhausts ?? [V(-0.58, -0.28, -1.0), V(0.58, -0.28, -1.0)];
-  return { group: g, prop, bladeMat, blur, ailL, ailR, elevator, rudder, pilot, scarf, eye, exhausts, t: 0 };
+  return { group: g, prop, bladeMat, blur, ailL, ailR, elevator, rudder, pilot, scarf, arms, openCockpit: air.openCockpit !== false, eye, exhausts, t: 0 };
 }
 
 // Biplane: round fuselage, open cowling with a radial engine, two wings with struts and bracing wires

@@ -27,7 +27,7 @@ what the game is and how to play it.
 | `src/grass.js` | GPU ground cover (grass tufts, flowers) in a tile that follows the camera, coloured from the terrain colour texture |
 | `src/smoke.js` | Shared particle ring (exhaust, crash plume, chimneys, train, spray); `AMBIENT_FAR2` gates ambient emitters |
 | `src/flight.js` | Flight model (`Flight`: state `ground`/`air`/`crashed`, `pos`, `vel`, `q`, `heading`, `throttle`, `flown`), per-plane handling (`AIRCRAFT.red/blue/bush/hopper`: thrust, drag, lift, stall, optional `VAPP`/`TAPP` for training approaches; `setAircraft` before `reset`), ground handling, collisions |
-| `src/plane.js` | Plane models (red biplane, blue parasol monoplane, yellow bush plane, green island hopper; `LIVERIES[].kind` picks the airframe, which may give its own cockpit `eye`, smoke `exhausts` and `openCockpit: false` for a cabin or canopy; the prop, tail, cockpit and wheels are shared) + liveries, `syncPlane` (prop blur, control surfaces) |
+| `src/plane.js` | Plane models (red biplane, blue parasol monoplane, yellow bush plane, green island hopper; `LIVERIES[].kind` picks the airframe, which may give its own cockpit `eye`, smoke `exhausts` and `openCockpit: false` for a cabin or canopy; the prop, tail, cockpit, pilot with `arms` and wheels are shared) + liveries, `syncPlane` (prop blur, control surfaces) |
 | `src/adventure.js` | Island Air Mail: `CHAPTERS` data, people, story cards, villagers, drops, beacon, save/load |
 | `src/nav.js` | Compass tape and paper minimap (`PLACES` labels, rendered from `groundAt`) |
 | `src/hud.js` | Instrument panel |
@@ -124,7 +124,14 @@ Add a new low-light preset to all three.
   - `drop`: `{ label, x, z, r, agl, deck? }`; fly within `r` and below `agl` m and a parcel parachutes down.
 
   Any step can also carry `say` (the card after it), `flag` (set when done), and `who` (a key of `PEOPLE`; people
-  met only from the air just need `{ name }`).
+  met only from the air just need `{ name }`). `item` picks the model handed over or dropped (`makeParcel`:
+  `plums`, `letters`, `fish`, `wick`, `lantern`, else a twine-tied parcel); `crowd: n` on a `land` step lines n
+  more villagers along the strip's edge.
+- Ground scenes (`startScene`/`updateScene`): the villager comes from the nearest entry in `world.js` `DOORS`
+  (house, hut and cabin doorsteps, pushed by world.js, harbours.js and vale.js) and walks back there under the
+  card. The reaction after the handover follows `flight.lastSink` (the postmark grades), the pilot's arm
+  (`plane.arms`, skipped for a closed cockpit) reaches out during the parcel's arc, and `shot()` cuts from the wide
+  orbit to a close shot for the handover.
 - Strips are looked up **by name** (`strip(name)`), so adding or reordering `STRIPS` never breaks a mission.
   Renaming a strip does.
 - Save: `localStorage['biplane.adventure.v1'] = { chapter, mission, done, through?, flags }`. `through` records how

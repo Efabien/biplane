@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { groundAt, slopeAt, addObstacle, STRIPS, ATOLL, SEA_LIGHT, SEAFORT } from './world.js';
+import { groundAt, slopeAt, addObstacle, STRIPS, ATOLL, SEA_LIGHT, SEAFORT, DOORS } from './world.js';
 import { paint, stripeTex } from './style.js';
 
 // Somewhere to live, or a boat to come by, at the mail stops by the sea: Elias rows down from his lighthouse to the
@@ -57,6 +57,8 @@ function hut(scene, x, y, z, rot, { w, d, hgt, wall, roof, stilts = 0 }) {
   const roofGeo = new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, 1)]), { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
   add(roofGeo, roof, 0, base + hgt, 0).scale.set(w * 1.3, w * 0.5, d * 1.2);
   add(new THREE.BoxGeometry(0.9, 1.9, 0.1).translate(0, 0.95, 0), 0x4a3322, w * 0.18, base, d / 2 + 0.05);
+  const step = d / 2 + (stilts ? 2.4 : 0.6); // the doorstep (past the platform's step, on stilts)
+  DOORS.push({ x: x + w * 0.18 * Math.cos(rot) + step * Math.sin(rot), z: z - w * 0.18 * Math.sin(rot) + step * Math.cos(rot) });
   add(new THREE.BoxGeometry(0.7, 0.6, 0.1), 0x26303c, -w * 0.22, base + hgt * 0.6, d / 2 + 0.05);
   if (stilts) {
     const post = new THREE.CylinderGeometry(0.14, 0.16, stilts + 4, 6).translate(0, (stilts - 4) / 2, 0);

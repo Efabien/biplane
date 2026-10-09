@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { groundAt, addObstacle, stripAt, VALE, VALE_POOL, VALE_CABINS, valeXZ, valeRiver, valeRiverWidth } from './world.js';
+import { groundAt, addObstacle, stripAt, VALE, VALE_POOL, VALE_CABINS, DOORS, valeXZ, valeRiver, valeRiverWidth } from './world.js';
 import { paint, time, atmo, pointScale } from './style.js';
 import { AMBIENT_FAR2 } from './smoke.js';
 
@@ -195,6 +195,7 @@ export function buildVale(scene, smoke) {
     part(c, top, c.w * 0.26, rh * 0.25, -c.d * 0.3, 0.75, rh * 0.75 + 1.3, 0.75, 0x6d6a62); // stone chimney through the roof
     part(c, g, c.w * 0.2, 0, front + 0.06, 0.95, 1.95, 0.12, 0x4a3322);                   // plank door
     part(c, g - 0.35, 0, 0, front + 1.1, c.w * 0.9, 0.4, 2.1, 0x6b5238);                  // porch deck
+    { const [px, pz] = local(c, c.w * 0.2, front + 2.6); DOORS.push({ x: px, z: pz }); }  // the doorstep, off the porch
     part(c, g - 0.1, -c.w / 2 - 0.55, 0, -c.d * 0.1, 0.9, 1.2, c.d * 0.55, 0x7a5a3a);    // woodpile along the side wall
     pane(c, g, -c.w * 0.22, 1.5, front + 0.06, 0);
     pane(c, g, c.w / 2 + 0.06, 1.5, 0, Math.PI / 2);
